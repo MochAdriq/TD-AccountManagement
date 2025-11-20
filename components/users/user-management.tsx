@@ -1,12 +1,6 @@
-// components/users/user-management.tsx (DIPERBARUI DENGAN TOKEN AUTH)
-
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useCallback } from "react";
 import {
   Table,
   TableBody,
@@ -15,16 +9,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,404 +35,453 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { UserPlus, Trash, Key } from "lucide-react";
-import type { ClientUser } from "@/lib/auth";
-import { useAuth } from "@/lib/auth"; // <-- Impor hook useAuth
+import {
+  PlusCircle,
+  UserCog,
+  Trash2,
+  Shield,
+  User as UserIcon,
+  Key,
+  Eye, // Icon Mata
+  EyeOff, // Icon Mata Tertutup
+} from "lucide-react";
+import { useAuth } from "@/lib/auth";
+
+// Tipe data user
+interface UserData {
+  id: string;
+  username: string;
+  role: "admin" | "operator";
+  name?: string | null;
+  createdAt: string;
+}
 
 export default function UserManagement() {
   const { toast } = useToast();
-  const { user: currentUser, logout } = useAuth(); // <-- Panggil hook, ambil 'logout'
-  const [users, setUsers] = useState<ClientUser[]>([]);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<string>("");
+  const { user: currentUser, logout } = useAuth(); // Ambil auth context
 
-  // Form states
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // State Tambah User
+  const [isAddOpen, setIsAddOpen] = useState(false);
   const [newUsername, setNewUsername] = useState("");
-  const [newName, setNewName] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState<"admin" | "operator">("operator");
-  const [changePassword, setChangePassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false); // Toggle Add
 
-  // ---------------------------------------------------------------
-  // ⬇⬇⬇ PERBAIKAN UTAMA DI BAWAH INI ⬇⬇⬇
-  // ---------------------------------------------------------------
+  // State Ganti Password
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
+  const [updatePassword, setUpdatePassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false); // Toggle Edit
 
-  /**
-   * Fungsi helper untuk mengambil token dari localStorage
-   */
+  // --- HELPER AUTH HEADER ---
   const getAuthHeaders = () => {
     const token = localStorage.getItem("authToken");
     return {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`, // <-- Kirim token di header
+      Authorization: `Bearer ${token}`,
     };
   };
 
-  /**
-   * Fungsi helper untuk menangani error 401 (Logout Paksa)
-   */
-  const handleUnauthorized = () => {
-    toast({
-      title: "Sesi Habis",
-      description:
-        "Sesi Anda tidak valid atau telah kedaluwarsa. Silakan login kembali.",
-      variant: "destructive",
-    });
-    logout(); // <-- Panggil fungsi logout dari hook
-  };
-
-  // 🔹 Fetch users dari API (DIPERBARUI)
-  const fetchUsers = async () => {
+  // --- 1. FETCH USERS (Fix Data Hilang) ---
+  const fetchUsers = useCallback(async () => {
+    setIsLoading(true);
     try {
       const res = await fetch("/api/users", {
         method: "GET",
-        headers: getAuthHeaders(), // <-- Gunakan headers
+        headers: getAuthHeaders(), // Kirim token
       });
 
       if (res.status === 401) {
-        handleUnauthorized(); // <-- Handle logout paksa
+        logout(); // Logout jika token expired
         return;
       }
 
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data);
+      } else {
+        console.error("Gagal ambil user");
+      }
+    } catch (error) {
+      console.error("Error fetching users:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [logout]);
+
+  useEffect(() => {
+    // Panggil fetch langsung saat mount (pastikan di client)
+    fetchUsers();
+  }, []);
+
+  // --- 2. ADD USER ---
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          username: newUsername,
+          password: newPassword,
+          role: newRole,
+          name: newName,
+        }),
+      });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Gagal ambil data user");
-      setUsers(data);
+
+      if (res.ok) {
+        toast({ title: "✅ Sukses", description: "User berhasil dibuat." });
+        setIsAddOpen(false);
+        setNewUsername("");
+        setNewPassword("");
+        setNewName("");
+        setNewRole("operator");
+        setShowPassword(false);
+        fetchUsers();
+      } else {
+        toast({
+          title: "❌ Gagal",
+          description: data.error || "Gagal membuat user.",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       toast({
-        title: "Error",
-        description: "Gagal memuat data user.",
+        title: "❌ Error",
+        description: "Terjadi kesalahan jaringan.",
         variant: "destructive",
       });
     }
   };
 
-  useEffect(() => {
-    // Jangan fetch data jika user (admin) belum ter-load
-    if (currentUser) {
-      fetchUsers();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser]); // <-- Tambahkan currentUser sebagai dependency
+  // --- 3. UPDATE PASSWORD ---
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
 
-  // 🔹 Tambah User (DIPERBARUI)
-  const handleAddUser = async () => {
-    if (!newUsername || !newPassword) {
-      // ... (validasi form tidak berubah)
-      return;
-    }
-
-    const res = await fetch("/api/users", {
-      method: "POST",
-      headers: getAuthHeaders(), // <-- Gunakan headers
-      body: JSON.stringify({
-        username: newUsername,
-        name: newName,
-        password: newPassword,
-        role: newRole,
-      }),
-    });
-
-    if (res.status === 401) {
-      handleUnauthorized(); // <-- Handle logout paksa
-      return;
-    }
-
-    if (res.ok) {
-      // ... (logika sukses tidak berubah)
-      toast({
-        title: "Berhasil",
-        description: "User baru berhasil ditambahkan",
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          username: selectedUser.username,
+          newPassword: updatePassword,
+        }),
       });
-      setIsAddDialogOpen(false);
-      setNewUsername("");
-      setNewName("");
-      setNewPassword("");
-      setNewRole("operator");
-      fetchUsers();
-    } else {
-      // ... (logika error tidak berubah)
+
+      const data = await res.json();
+
+      if (res.ok) {
+        toast({
+          title: "✅ Sukses",
+          description: `Password ${selectedUser.username} berhasil diubah.`,
+        });
+        setIsEditOpen(false);
+        setSelectedUser(null);
+        setUpdatePassword("");
+        setShowNewPassword(false);
+      } else {
+        toast({
+          title: "❌ Gagal",
+          description: data.error,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "❌ Error",
+        description: "Kesalahan jaringan.",
+        variant: "destructive",
+      });
     }
   };
 
-  // 🔹 Ubah Password (DIPERBARUI)
-  const handleChangePassword = async () => {
-    const res = await fetch("/api/users", {
-      method: "PATCH",
-      headers: getAuthHeaders(), // <-- Gunakan headers
-      body: JSON.stringify({
-        username: selectedUser,
-        newPassword: changePassword,
-      }),
-    });
+  // --- 4. DELETE USER ---
+  const handleDeleteUser = async (username: string) => {
+    try {
+      const res = await fetch("/api/users", {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ username }), // Body untuk DELETE terkadang perlu opsi khusus di server, tapi standar fetch support ini
+      });
 
-    if (res.status === 401) {
-      handleUnauthorized(); // <-- Handle logout paksa
-      return;
-    }
+      // Jika server backend mengharuskan query param untuk delete, ganti jadi:
+      // await fetch(`/api/users?username=${username}`, { method: "DELETE", headers: getAuthHeaders() });
 
-    if (res.ok) {
-      // ... (logika sukses tidak berubah)
-      toast({ title: "Berhasil", description: "Password berhasil diubah" });
-      setIsPasswordDialogOpen(false);
-      setChangePassword("");
-    } else {
-      // ... (logika error tidak berubah)
-    }
-  };
+      const data = await res.json();
 
-  // 🔹 Hapus User (DIPERBARUI)
-  const handleDeleteUser = async () => {
-    const res = await fetch("/api/users", {
-      method: "DELETE",
-      headers: getAuthHeaders(), // <-- Gunakan headers
-      body: JSON.stringify({ username: selectedUser }),
-    });
-
-    if (res.status === 401) {
-      handleUnauthorized(); // <-- Handle logout paksa
-      return;
-    }
-
-    if (res.ok) {
-      // ... (logika sukses tidak berubah)
-      toast({ title: "Berhasil", description: "User berhasil dihapus" });
-      fetchUsers();
-      setIsDeleteDialogOpen(false);
-    } else {
-      // ... (logika error tidak berubah)
+      if (res.ok) {
+        toast({ title: "✅ Dihapus", description: "User berhasil dihapus." });
+        fetchUsers();
+      } else {
+        toast({
+          title: "❌ Gagal",
+          description: data.error,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "❌ Error",
+        description: "Gagal menghapus user.",
+        variant: "destructive",
+      });
     }
   };
-
-  // ---------------------------------------------------------------
-  // ⬆⬆⬆ SELESAI PERBAIKAN ⬆⬆⬆
-  // ---------------------------------------------------------------
 
   return (
     <div className="space-y-6">
-      {/* ... (Semua kode JSX di bawah ini TIDAK BERUBAH) ... */}
-      <Card>
-        <CardHeader className="bg-blue-600 text-white rounded-t-lg">
-          <CardTitle className="flex items-center justify-between">
-            <span>Manajemen User</span>
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="secondary" size="sm">
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Tambah User
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Tambah User Baru</DialogTitle>
-                  <DialogDescription>
-                    Buat akun user baru untuk mengakses sistem
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
-                    <Input
-                      id="username"
-                      value={newUsername}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        setNewUsername(e.target.value)
-                      }
-                      placeholder="Masukkan username"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Nama Lengkap</Label>
-                    <Input
-                      id="name"
-                      value={newName}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        setNewName(e.target.value)
-                      }
-                      placeholder="Masukkan nama lengkap (opsional)"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={newPassword}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        setNewPassword(e.target.value)
-                      }
-                      placeholder="Masukkan password"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="role">Role</Label>
-                    <Select
-                      value={newRole}
-                      onValueChange={(value: "admin" | "operator") =>
-                        setNewRole(value)
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Pilih role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="operator">Operator</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsAddDialogOpen(false)}
-                  >
-                    Batal
-                  </Button>
-                  <Button onClick={handleAddUser}>Tambah User</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Username</TableHead>
-                <TableHead>Nama</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Dibuat</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.username}</TableCell>
-                  <TableCell>{user.name || "-"}</TableCell>{" "}
-                  <TableCell>
-                    <Badge
-                      className={
-                        user.role === "admin" ? "bg-red-500" : "bg-blue-500"
-                      }
-                    >
-                      {user.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {new Date(user.createdAt).toLocaleDateString("id-ID")}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end space-x-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => {
-                          setSelectedUser(user.username);
-                          setIsPasswordDialogOpen(true);
-                        }}
-                        className="h-8 w-8"
-                      >
-                        <Key className="h-4 w-4" />
-                      </Button>
+      <div className="flex justify-between items-center">
+        <div>
+          <h3 className="text-lg font-bold">Daftar Pengguna</h3>
+          <p className="text-sm text-gray-500">
+            Kelola akses admin dan operator.
+          </p>
+        </div>
 
-                      {currentUser &&
-                        user.username !== "admin" &&
-                        user.username !== currentUser.username && (
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => {
-                              setSelectedUser(user.username);
-                              setIsDeleteDialogOpen(true);
-                            }}
-                            className="h-8 w-8 text-red-500 hover:text-red-600"
-                          >
-                            <Trash className="h-4 w-4" />
-                          </Button>
-                        )}
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-blue-600 hover:bg-blue-700">
+              <PlusCircle className="mr-2 h-4 w-4" /> Tambah User
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Buat User Baru</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleAddUser} className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Nama Lengkap</Label>
+                <Input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Contoh: Budi Santoso"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Username</Label>
+                <Input
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder="Contoh: budi123"
+                  required
+                />
+              </div>
+
+              {/* PASSWORD INPUT (ADD) */}
+              <div className="space-y-2">
+                <Label>Password</Label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Minimal 6 karakter"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select
+                  value={newRole}
+                  onValueChange={(v: any) => setNewRole(v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="operator">Operator</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700"
+              >
+                Simpan User
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="border rounded-md">
+        <Table>
+          <TableHeader className="bg-gray-50">
+            <TableRow>
+              <TableHead>Nama</TableHead>
+              <TableHead>Username</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Dibuat</TableHead>
+              <TableHead className="text-right">Aksi</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="text-center py-8 text-gray-500"
+                >
+                  {isLoading ? "Memuat data..." : "Belum ada user lain."}
+                </TableCell>
+              </TableRow>
+            ) : (
+              users.map((u) => (
+                <TableRow key={u.id}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 bg-gray-100 rounded-full">
+                        <UserIcon className="h-4 w-4 text-gray-600" />
+                      </div>
+                      {u.name || "-"}
                     </div>
                   </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  <TableCell className="font-mono text-xs">
+                    {u.username}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={u.role === "admin" ? "default" : "secondary"}
+                      className={
+                        u.role === "admin"
+                          ? "bg-purple-600"
+                          : "bg-blue-100 text-blue-700"
+                      }
+                    >
+                      {u.role === "admin" ? (
+                        <Shield className="h-3 w-3 mr-1" />
+                      ) : (
+                        <UserCog className="h-3 w-3 mr-1" />
+                      )}
+                      {u.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-xs text-gray-500">
+                    {new Date(u.createdAt).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="text-right space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedUser(u);
+                        setUpdatePassword("");
+                        setIsEditOpen(true);
+                      }}
+                    >
+                      <Key className="h-3 w-3 mr-1" /> Ganti Pass
+                    </Button>
 
-      {/* Dialog Ubah Password */}
-      <Dialog
-        open={isPasswordDialogOpen}
-        onOpenChange={setIsPasswordDialogOpen}
-      >
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Hapus User {u.username}?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Aksi ini permanen.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Batal</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-red-600 hover:bg-red-700"
+                            onClick={() => handleDeleteUser(u.username)}
+                          >
+                            Ya, Hapus
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* DIALOG GANTI PASS */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Ubah Password</DialogTitle>
-            <DialogDescription>
-              Ubah password untuk user: {selectedUser}
-            </DialogDescription>
+            <DialogTitle>
+              Ganti Password:{" "}
+              <span className="text-blue-600">{selectedUser?.username}</span>
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <form onSubmit={handleUpdatePassword} className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="new-password">Password Baru</Label>
-              <Input
-                id="new-password"
-                type="password"
-                value={changePassword}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setChangePassword(e.target.value)
-                }
-                placeholder="Masukkan password baru"
-              />
+              <Label>Password Baru</Label>
+              <div className="relative">
+                <Input
+                  type={showNewPassword ? "text" : "password"}
+                  value={updatePassword}
+                  onChange={(e) => setUpdatePassword(e.target.value)}
+                  placeholder="Masukkan password baru"
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  tabIndex={-1}
+                >
+                  {showNewPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
-          <DialogFooter>
             <Button
-              variant="outline"
-              onClick={() => setIsPasswordDialogOpen(false)}
+              type="submit"
+              className="w-full bg-green-600 hover:bg-green-700"
             >
-              Batal
+              Update Password
             </Button>
-            <Button onClick={handleChangePassword}>Ubah Password</Button>
-          </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
-
-      {/* Dialog Konfirmasi Hapus */}
-      <AlertDialog
-        open={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Hapus User</AlertDialogTitle>
-            <AlertDialogDescription>
-              Apakah Anda yakin ingin menghapus user "{selectedUser}"? Tindakan
-              ini tidak dapat dibatalkan.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteUser}
-              className="bg-red-500 hover:bg-red-600"
-            >
-              Hapus
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

@@ -46,7 +46,7 @@ enum PlatformType {
 // MODEL DEFINITIONS
 // ==========================
 
-// 🔹 Akun utama
+// 隼 Akun utama
 model Account {
   id            String       @id @default(uuid())
   email         String       @unique
@@ -65,7 +65,7 @@ model Account {
   @@map("accounts")
 }
 
-// 🔹 Akun Garansi (berdiri sendiri)
+// 隼 Akun Garansi (berdiri sendiri)
 model GaransiAccount {
   id           String       @id @default(uuid())
   email        String
@@ -80,16 +80,19 @@ model GaransiAccount {
   @@map("garansi_accounts")
 }
 
-// 🔹 Pelaporan akun
+// 隼 Pelaporan akun
 model ReportedAccount {
-  id           String   @id @default(uuid())
-  accountId    String   @map("account_id")
-  reportReason String   @map("report_reason")
-  reportedAt   DateTime @default(now()) @map("reported_at")
-  resolved     Boolean  @default(false)
+  id           String    @id @default(uuid())
+  accountId    String    @map("account_id")
+  reportReason String    @map("report_reason")
+  reportedAt   DateTime  @default(now()) @map("reported_at")
+  resolved     Boolean   @default(false)
   resolvedAt   DateTime? @map("resolved_at")
+  
+  // --- PERUBAHAN BARU: Catatan Penyelesaian ---
+  resolutionNote String?   @map("resolution_note") 
 
-  operatorName String?  @map("operator_name")
+  operatorName String?   @map("operator_name")
 
   // Relations
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -97,11 +100,10 @@ model ReportedAccount {
   @@map("reported_accounts")
 }
 
-// 🔹 Penugasan akun ke customer
+// 隼 Penugasan akun ke customer
 model CustomerAssignment {
   id                 String       @id @default(uuid())
   customerIdentifier String       @map("customer_identifier")
-  // customerWhatsapp   String?      @map("customer_whatsapp") // <-- DIHAPUS
   accountId          String       @map("account_id")
   accountEmail       String       @map("account_email")
   accountType        AccountType  @map("account_type")
@@ -109,18 +111,16 @@ model CustomerAssignment {
   operatorName       String?      @map("operator_name")
   assignedAt         DateTime     @default(now()) @map("assigned_at")
 
-  // --- INI PERUBAHANNYA ---
-  whatsappAccountId String? @map("whatsapp_account_id") // Relasi ke Akun WA
-  // --- AKHIR PERUBAHAN ---
+  whatsappAccountId String?       @map("whatsapp_account_id") // Relasi ke Akun WA
 
   // Relations
   account         Account          @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  whatsappAccount WhatsappAccount? @relation(fields: [whatsappAccountId], references: [id]) // Relasi ke Akun WA
+  whatsappAccount WhatsappAccount? @relation(fields: [whatsappAccountId], references: [id])
 
   @@map("customer_assignments")
 }
 
-// 🔹 Aktivitas operator
+// 隼 Aktivitas operator
 model OperatorActivity {
   id           String       @id @default(uuid())
   operatorName String       @map("operator_name")
@@ -132,23 +132,21 @@ model OperatorActivity {
   @@map("operator_activities")
 }
 
-// --- INI TAMBAHAN BARU ---
-// 🔹 Akun WhatsApp Operator
+// 隼 Akun WhatsApp Operator
 model WhatsappAccount {
   id        String   @id @default(uuid())
   name      String   @unique // "WA META", "WA 6", dll.
-  number    String // "0812345678"
+  number    String   // "0812345678"
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Relasi: Satu akun WA bisa dipakai di banyak assignment
+  // Relasi
   customerAssignments CustomerAssignment[]
 
   @@map("whatsapp_accounts")
 }
-// --- AKHIR TAMBAHAN BARU ---
 
-// 🔹 User internal sistem (admin / operator)
+// 隼 User internal sistem (admin / operator)
 model User {
   id        String   @id @default(uuid())
   username  String   @unique

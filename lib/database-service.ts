@@ -234,13 +234,17 @@ export class DatabaseService {
       type: AccountType;
       platform: PrismaPlatformType;
     }[],
-    expiresAt?: Date
-  ): Promise<Account[]> {
+    expiresAt?: Date,
+    customProfileCount?: number // <--- Parameter Baru
+  ): Promise<{ count: number; accounts: Account[] }> {
+    // <--- Return Type Berubah
+
     if (!Array.isArray(accounts) || accounts.length === 0) {
       throw new Error("Accounts array cannot be empty.");
     }
     const defaultExpiresAt =
       expiresAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
     const dataToInsert = accounts.map((a) => {
       if (!a.email || !a.password || !a.type || !a.platform) {
         throw new Error(`Invalid account data in array: ${JSON.stringify(a)}`);
@@ -254,24 +258,30 @@ export class DatabaseService {
         type: a.type as PrismaAccountType,
         platform: a.platform,
         profiles: generateProfiles(
-          a.type as PrismaAccountType
+          a.type as PrismaAccountType,
+          customProfileCount // <--- Pass ke Utils
         ) as unknown as Prisma.InputJsonValue,
         expiresAt: defaultExpiresAt,
         reported: false,
       };
     });
+
     try {
+      // createMany mengembalikan { count: number } (jumlah yang BERHASIL diinsert)
       const result = await prisma.account.createMany({
         data: dataToInsert,
         skipDuplicates: true,
       });
+
       console.log(
         `Attempted to insert ${accounts.length} accounts, ${result.count} were new.`
       );
-      return await prisma.account.findMany({
-        where: { email: { in: accounts.map((x) => x.email) } },
-        orderBy: { createdAt: "desc" },
-      });
+
+      // Kita kembalikan jumlah yang sukses agar API bisa hitung duplikat
+      return {
+        count: result.count,
+        accounts: [], // Optional: kalau mau hemat bandwidth gak usah return full object
+      };
     } catch (error: any) {
       console.error("Error during bulk account insert:", error);
       throw new Error("Failed to add multiple accounts.");
@@ -441,11 +451,19 @@ export class DatabaseService {
       orderBy: { reportedAt: "desc" },
       include: {
         account: {
-          select: { id: true, email: true, type: true, platform: true },
+          // UPDATE: Tambahkan 'password: true'
+          select: {
+            id: true,
+            email: true,
+            type: true,
+            platform: true,
+            password: true,
+          },
         },
       },
     });
   }
+
   static async reportAccount(
     accountId: string,
     reason: string,
@@ -477,7 +495,11 @@ export class DatabaseService {
       return report;
     });
   }
-  static async resolveReport(reportId: string, newPassword?: string) {
+  static async resolveReport(
+    reportId: string,
+    newPassword?: string,
+    note?: string // Parameter baru untuk catatan
+  ) {
     if (!reportId) throw new Error("Report ID is required.");
 
     return prisma.$transaction(async (tx) => {
@@ -493,15 +515,15 @@ export class DatabaseService {
         return;
       }
 
-      // --- UPDATE DI SINI ---
+      // Update ReportedAccount dengan resolved = true, waktu, DAN catatan
       await tx.reportedAccount.update({
         where: { id: reportId },
         data: {
           resolved: true,
-          resolvedAt: new Date(), // <--- PENTING: Catat waktu penyelesaian!
+          resolvedAt: new Date(),
+          resolutionNote: note, // Simpan catatan ke database
         },
       });
-      // --- AKHIR UPDATE ---
 
       const accountUpdateData: Prisma.AccountUpdateInput = { reported: false };
 
@@ -509,15 +531,16 @@ export class DatabaseService {
         accountUpdateData.password = newPassword;
       }
 
+      // Update status akun jadi tidak reported
       await tx.account.update({
         where: { id: report.accountId },
         data: accountUpdateData,
       });
 
       console.log(
-        `Report ${reportId} resolved at ${new Date().toISOString()}. Account ${
-          report.accountId
-        } updated.`
+        `Report ${reportId} resolved at ${new Date().toISOString()}. Note: ${
+          note || "-"
+        }`
       );
     });
   }

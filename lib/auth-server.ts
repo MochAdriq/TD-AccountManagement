@@ -1,19 +1,19 @@
-// lib/auth-server.ts (SUDAH DIPERBAIKI - HANYA SERVER-SIDE)
+// lib/auth-server.ts
 
 import { prisma } from "./prisma";
-import type { ClientUser } from "./auth"; // Kita impor tipe dari file client
+import type { ClientUser } from "./auth";
+import jwt from "jsonwebtoken"; // <-- Import JWT library
 
 // ============================================================
-// 1️⃣ VALIDATE USER (Login) - (DIPERBAIKI)
+// 1️⃣ VALIDATE USER (Login)
 // ============================================================
 export async function validateUser(
   username: string,
   password: string
 ): Promise<ClientUser | null> {
   try {
-    console.log("=== SERVER LOGIN VALIDATION (Plaintext) ===");
+    console.log("=== SERVER LOGIN VALIDATION ===");
 
-    // 1. Cari user berdasarkan username
     const user = await prisma.user.findUnique({
       where: { username: username.trim() },
     });
@@ -23,23 +23,21 @@ export async function validateUser(
       return null;
     }
 
-    // 2. Perbandingan password secara plaintext (TIDAK AMAN)
     if (user.password !== password.trim()) {
       console.warn("❌ Password salah");
       return null;
     }
 
-    // 3. JANGAN PERNAH kirim password ke client/localStorage
     const sessionUser: ClientUser = {
       id: user.id,
       username: user.username,
-      name: user.name || null, // <-- PERBAIKAN: Tambahkan 'name'
+      name: user.name || null,
       role: user.role as "admin" | "operator",
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
 
-    console.log("✅ Login berhasil:", user.username, "Role:", user.role);
+    console.log("✅ Login berhasil:", user.username);
     return sessionUser;
   } catch (error) {
     console.error("❌ Login error:", error);
@@ -48,7 +46,42 @@ export async function validateUser(
 }
 
 // ============================================================
-// 2️⃣ GET ALL USERS (Admin Only) - (DIPERBAIKI)
+// 2️⃣ VERIFY AUTH (Middleware Helper) - [FUNGSI BARU]
+// ============================================================
+export async function verifyAuth(req: Request): Promise<ClientUser | null> {
+  try {
+    // 1. Ambil header Authorization
+    const authHeader =
+      req.headers.get("Authorization") || req.headers.get("authorization");
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return null; // Tidak ada token
+    }
+
+    // 2. Ambil tokennya saja
+    const token = authHeader.split(" ")[1];
+
+    // 3. Pastikan Secret Key ada
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      console.error("❌ JWT_SECRET belum disetting di .env");
+      return null;
+    }
+
+    // 4. Verifikasi Token JWT
+    const decoded = jwt.verify(token, secret) as ClientUser;
+
+    // 5. Kembalikan data user
+    return decoded;
+  } catch (error) {
+    // Token expired atau invalid signature
+    // console.error("⚠️ Auth verification failed:", error);
+    return null;
+  }
+}
+
+// ============================================================
+// 3️⃣ GET ALL USERS (Admin Only)
 // ============================================================
 export async function getAllUsers(): Promise<ClientUser[]> {
   try {
@@ -56,7 +89,7 @@ export async function getAllUsers(): Promise<ClientUser[]> {
       select: {
         id: true,
         username: true,
-        name: true, // <-- PERBAIKAN: Select 'name'
+        name: true,
         role: true,
         createdAt: true,
         updatedAt: true,
@@ -66,45 +99,44 @@ export async function getAllUsers(): Promise<ClientUser[]> {
 
     return users.map((u) => ({
       ...u,
-      name: u.name || null, // <-- PERBAIKAN: Pastikan 'name' ada
+      name: u.name || null,
       role: u.role as "admin" | "operator",
     }));
   } catch (error) {
-    console.error("❌ Gagal mengambil data users:", error);
+    console.error("❌ Gagal ambil users:", error);
     return [];
   }
 }
 
 // ============================================================
-// 3️⃣ ADD USER - (DIPERBAIKI)
+// 4️⃣ ADD USER
 // ============================================================
 export async function addUser(data: {
   username: string;
   password: string;
   role: "admin" | "operator";
-  name?: string | null; // <-- PERBAIKAN: Terima 'name' (opsional)
+  name?: string | null;
 }): Promise<boolean> {
   try {
     await prisma.user.create({
       data: {
         username: data.username.trim(),
-        password: data.password.trim(), // <-- Simpan plain-text (TIDAK AMAN)
+        password: data.password.trim(),
         role: data.role,
-        name: data.name ? data.name.trim() : null, // <-- PERBAIKAN: Simpan 'name'
+        name: data.name ? data.name.trim() : null,
       },
     });
-    console.log("✅ User berhasil ditambahkan:", data.username);
+    console.log("✅ User ditambahkan:", data.username);
     return true;
   } catch (error) {
-    console.error("❌ Gagal menambah user:", error);
+    console.error("❌ Gagal tambah user:", error);
     return false;
   }
 }
 
 // ============================================================
-// 4️⃣ UPDATE USER PASSWORD - (Hanya Server-Side)
+// 5️⃣ UPDATE USER PASSWORD
 // ============================================================
-// (Tidak perlu diubah, sudah benar)
 export async function updateUserPassword(
   username: string,
   newPassword: string
@@ -112,9 +144,9 @@ export async function updateUserPassword(
   try {
     await prisma.user.update({
       where: { username: username.trim() },
-      data: { password: newPassword.trim() }, // <-- Simpan plain-text (TIDAK AMAN)
+      data: { password: newPassword.trim() },
     });
-    console.log("✅ Password berhasil diubah:", username);
+    console.log("✅ Password diubah:", username);
     return true;
   } catch (error) {
     console.error("❌ Gagal update password:", error);
@@ -123,20 +155,18 @@ export async function updateUserPassword(
 }
 
 // ============================================================
-// 5️⃣ DELETE USER (kecuali admin utama) - (Hanya Server-Side)
+// 6️⃣ DELETE USER
 // ============================================================
-// (Tidak perlu diubah, sudah benar)
 export async function deleteUser(username: string): Promise<boolean> {
   if (username.toLowerCase() === "admin") {
     console.warn("⚠️ Admin utama tidak boleh dihapus.");
     return false;
   }
-
   try {
     await prisma.user.delete({
       where: { username: username.trim() },
     });
-    console.log("✅ User berhasil dihapus:", username);
+    console.log("✅ User dihapus:", username);
     return true;
   } catch (error) {
     console.error("❌ Gagal hapus user:", error);

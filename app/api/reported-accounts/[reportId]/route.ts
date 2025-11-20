@@ -1,71 +1,35 @@
-// app/api/reported-accounts/[reportId]/route.ts
-
 import { NextResponse } from "next/server";
 import { DatabaseService } from "@/lib/database-service";
+import { verifyAuth } from "@/lib/auth-server";
 
-/**
- * --------------------------------------------------------------------------------
- * 🔹 PATCH /api/reported-accounts/[reportId]
- * --------------------------------------------------------------------------------
- * Endpoint untuk menyelesaikan (resolve) sebuah laporan.
- * Bisa juga untuk update password akun yang dilaporkan.
- *
- * @param { params: { reportId: string } } - ID dari laporan yang akan di-resolve
- * @body { newPassword?: string } - (Opsional) Password baru untuk akun terkait.
- * @returns { NextResponse } - Pesan sukses atau pesan error.
- */
-export const dynamic = "force-dynamic";
 export async function PATCH(
-  request: Request,
+  req: Request,
   { params }: { params: { reportId: string } }
 ) {
   try {
-    const { reportId } = params;
-    const body = await request.json();
+    const auth = await verifyAuth(req);
+    if (!auth || auth.role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    // newPassword bisa 'undefined' atau string kosong, itu valid
-    const newPassword = body.newPassword as string | undefined;
+    // Baca note dari body request
+    const { newPassword, note } = await req.json();
 
-    // 1. Validasi input
-    if (!reportId) {
+    if (!params.reportId) {
       return NextResponse.json(
-        { error: "Report ID is required." },
-        { status: 400 } // 400 Bad Request
+        { error: "Report ID required" },
+        { status: 400 }
       );
     }
 
-    console.log(
-      `[API] Attempting to resolve report ID: ${reportId} ${
-        newPassword ? "with new password" : "without new password"
-      }`
-    );
+    // Kirim note ke DatabaseService
+    await DatabaseService.resolveReport(params.reportId, newPassword, note);
 
-    // 2. Panggil DatabaseService
-    // Fungsi ini (resolveReport) sudah di-wrap dalam $transaction
-    await DatabaseService.resolveReport(reportId, newPassword);
-
-    console.log(`[API] Successfully resolved report ID: ${reportId}`);
-
-    // 3. Kembalikan respons sukses
-    return NextResponse.json(
-      { message: "Report resolved successfully." },
-      { status: 200 } // 200 OK
-    );
+    return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error(
-      `❌ [API] PATCH /api/reported-accounts/${params.reportId} error:`,
-      error.message
-    );
-
-    // Tangani error spesifik jika laporan tidak ditemukan
-    if (error.message.includes("not found")) {
-      return NextResponse.json({ error: error.message }, { status: 404 }); // 404 Not Found
-    }
-
-    // Error umum
     return NextResponse.json(
-      { error: "Failed to resolve report." },
-      { status: 500 } // 500 Internal Server Error
+      { error: error.message || "Failed to resolve report" },
+      { status: 500 }
     );
   }
 }

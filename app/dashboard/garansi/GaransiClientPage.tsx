@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react"; // Import useMemo
+import { useState, useEffect, useMemo } from "react";
 import { AccountProvider, useAccounts } from "@/contexts/account-context";
 import { GaransiHeader } from "@/components/garansi/garansi-header";
 import LoadingSpinner from "@/components/shared/loading-spinner";
@@ -17,13 +17,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import {
   Calendar as CalendarIcon,
-  Shield,
   Copy,
-  Info,
   Database,
   PlusCircle,
   Clock,
   CalendarPlus,
+  Filter,
+  X,
 } from "lucide-react";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import {
@@ -34,12 +34,18 @@ import {
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import GaransiForm from "@/components/garansi/garansi-form";
 import { Label } from "@/components/ui/label";
-import type { AccountType, GaransiAccount } from "@prisma/client";
-
-// --- Impor Komponen Pagination ---
+import type { GaransiAccount } from "@prisma/client";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { PLATFORM_LIST } from "@/lib/constants";
 import {
   Pagination,
   PaginationContent,
@@ -47,11 +53,8 @@ import {
   PaginationLink,
   PaginationPrevious,
   PaginationNext,
-  PaginationEllipsis, // Opsional jika ingin ellipsis
+  PaginationEllipsis,
 } from "@/components/ui/pagination";
-// --- Akhir Impor ---
-
-// Impor Dialog dari shadcn/ui
 import {
   Dialog,
   DialogContent,
@@ -61,67 +64,55 @@ import {
 } from "@/components/ui/dialog";
 import React from "react";
 
-// Komponen Inti (View)
 function GaransiView() {
   const {
     getGaransiAccountsByDate,
     getGaransiAccountsByExpiresAt,
     getRemainingDays,
-    garansiAccounts, // Data SEMUA akun garansi dari context
+    garansiAccounts,
   } = useAccounts();
   const { toast } = useToast();
   const [selectedDate, setSelectedDate] = useState<Date>();
 
-  // --- State untuk Data & Filter ---
-  // State `sourceAccounts` menyimpan data mentah (semua terbaru ATAU hasil filter)
-  const [sourceAccounts, setSourceAccounts] = useState<GaransiAccount[]>(() => {
-    const sortedAll = Array.isArray(garansiAccounts)
-      ? [...garansiAccounts].sort((a, b) => {
-          const dateA = a.warrantyDate ? new Date(a.warrantyDate).getTime() : 0;
-          const dateB = b.warrantyDate ? new Date(b.warrantyDate).getTime() : 0;
-          return dateB - dateA;
-        })
-      : [];
-    return sortedAll; // Simpan SEMUA data terurut di awal
-  });
-  const [isDataFiltered, setIsDataFiltered] = useState(false); // Tandai jika data sedang difilter
+  // --- State Data ---
+  const [sourceAccounts, setSourceAccounts] = useState<GaransiAccount[]>([]);
+  const [isDateFiltered, setIsDateFiltered] = useState(false);
 
-  // --- State untuk Pagination ---
+  // --- State Filter Platform & Tipe (BARU) ---
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all"); // <--- New State
+
+  // --- State Pagination ---
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 10; // Tentukan jumlah item per halaman
+  const ITEMS_PER_PAGE = 10;
 
   const [isLoadingView, setIsLoadingView] = useState(false);
   const [filterType, setFilterType] = useState<"warrantyDate" | "expiresAt">(
     "warrantyDate"
   );
 
-  // Update sourceAccounts saat garansiAccounts dari context berubah (misal setelah refresh)
+  // 1. Load Data Awal
   useEffect(() => {
-    if (!isDataFiltered && Array.isArray(garansiAccounts)) {
-      // Hanya update jika tidak sedang filter
+    if (!isDateFiltered && Array.isArray(garansiAccounts)) {
       const sortedAll = [...garansiAccounts].sort((a, b) => {
         const dateA = a.warrantyDate ? new Date(a.warrantyDate).getTime() : 0;
         const dateB = b.warrantyDate ? new Date(b.warrantyDate).getTime() : 0;
         return dateB - dateA;
       });
       setSourceAccounts(sortedAll);
-      // Reset ke halaman 1 jika halaman saat ini jadi tidak valid
-      const newTotalPages = Math.ceil(sortedAll.length / ITEMS_PER_PAGE);
-      if (currentPage > newTotalPages && newTotalPages > 0) {
-        setCurrentPage(newTotalPages);
-      } else if (sortedAll.length === 0) {
-        setCurrentPage(1);
-      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [garansiAccounts, isDataFiltered]); // Jangan tambahkan currentPage di sini
+  }, [garansiAccounts, isDateFiltered]);
 
-  // --- Handle Date Select (Update sourceAccounts & Reset Page) ---
+  // 2. Reset halaman ke 1 jika filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [platformFilter, typeFilter]);
+
+  // --- Handle Date Select ---
   const handleDateSelect = async (date: Date | undefined) => {
     if (!date) {
-      // Jika tanggal dihapus, kembali ke default
       setSelectedDate(undefined);
-      setIsDataFiltered(false); // Tandai tidak lagi difilter
+      setIsDateFiltered(false);
       const sortedAll = Array.isArray(garansiAccounts)
         ? [...garansiAccounts].sort(
             (a, b) =>
@@ -129,15 +120,13 @@ function GaransiView() {
               new Date(a.warrantyDate).getTime()
           )
         : [];
-      setSourceAccounts(sortedAll); // Kembalikan ke semua data
-      setCurrentPage(1); // Kembali ke halaman 1
+      setSourceAccounts(sortedAll);
+      setCurrentPage(1);
       return;
     }
-
     setSelectedDate(date);
     setIsLoadingView(true);
-    setIsDataFiltered(true); // Tandai sedang difilter
-
+    setIsDateFiltered(true);
     try {
       let dateAccounts: GaransiAccount[] = [];
       const dateString = date.toISOString();
@@ -146,55 +135,78 @@ function GaransiView() {
       } else {
         dateAccounts = await getGaransiAccountsByExpiresAt(dateString);
       }
-      setSourceAccounts(dateAccounts); // Update source dengan hasil filter
-      setCurrentPage(1); // Reset ke halaman 1 setelah filter
+      setSourceAccounts(dateAccounts);
+      setCurrentPage(1);
     } catch (error) {
       console.error("Failed to load garansi accounts:", error);
       toast({
-        /* ... */
+        title: "Error",
+        description: "Gagal memuat data tanggal tersebut.",
+        variant: "destructive",
       });
-      setSourceAccounts([]); // Kosongkan jika error filter
-      setCurrentPage(1);
+      setSourceAccounts([]);
     } finally {
       setIsLoadingView(false);
     }
   };
 
   const copyAccountDetails = (account: GaransiAccount) => {
-    /* ... (tidak berubah) ... */
+    const textToCopy = `
+Email: ${account.email}
+Password: ${account.password}
+Platform: ${account.platform}
+Expired: ${new Date(account.expiresAt).toLocaleDateString("id-ID")}
+    `.trim();
+    navigator.clipboard.writeText(textToCopy);
+    toast({
+      title: "Disalin!",
+      description: `Akun ${account.email} berhasil disalin.`,
+    });
   };
+
   const copyAllAccounts = () => {
-    // Copy HANYA yang tampil di halaman ini
     if (paginatedAccounts.length === 0) return;
     const allText = paginatedAccounts
-      .map((acc) => `Email: ${acc.email}\nPassword: ${acc.password}`)
+      .map(
+        (acc) =>
+          `Email: ${acc.email}\nPassword: ${acc.password}\nPlatform: ${acc.platform}`
+      )
       .join("\n\n");
     navigator.clipboard.writeText(allText);
     toast({
       title: "✅ Akun Halaman Ini Tersalin",
-      description: `${paginatedAccounts.length} akun garansi di halaman ${currentPage} tersalin.`,
+      description: `${paginatedAccounts.length} akun garansi berhasil disalin.`,
     });
   };
 
-  // --- Hitung Variabel Pagination ---
-  const totalItems = sourceAccounts.length;
+  // --- LOGIC FILTER GABUNGAN (Platform + Tipe) ---
+  const filteredData = sourceAccounts.filter((acc) => {
+    // 1. Filter Platform
+    if (platformFilter !== "all" && acc.platform !== platformFilter)
+      return false;
+    // 2. Filter Tipe
+    if (typeFilter !== "all" && acc.type !== typeFilter) return false;
+
+    return true;
+  });
+
+  // Pagination
+  const totalItems = filteredData.length;
   const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
-  // Ambil data HANYA untuk halaman saat ini
-  const paginatedAccounts = sourceAccounts.slice(startIndex, endIndex);
-  // --- Akhir Hitung ---
+  const paginatedAccounts = filteredData.slice(startIndex, endIndex);
 
-  // --- Kondisi Tampilan ---
   const hasResultsToShow = !isLoadingView && paginatedAccounts.length > 0;
   const isFilteredNoResults =
-    isDataFiltered && !isLoadingView && sourceAccounts.length === 0;
+    !isLoadingView &&
+    totalItems === 0 &&
+    (isDateFiltered || platformFilter !== "all" || typeFilter !== "all");
   const isInitialLoadEmpty =
-    !isDataFiltered &&
     !isLoadingView &&
     sourceAccounts.length === 0 &&
+    !isDateFiltered &&
     (!garansiAccounts || garansiAccounts.length === 0);
-  // --- Akhir Kondisi ---
 
   return (
     <div className="space-y-6">
@@ -205,113 +217,163 @@ function GaransiView() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Bagian Filter & Kalender */}
+          {/* --- AREA FILTER --- */}
           <div className="space-y-6 mb-6">
-            <div className="space-y-3">
-              <Label className="text-base font-semibold text-gray-700">
-                Pilih Tipe Pencarian
-              </Label>
-              <div className="flex gap-4">
-                <Button
-                  variant={
-                    filterType === "warrantyDate" ? "default" : "outline"
-                  }
-                  onClick={() => {
-                    setFilterType("warrantyDate");
-                    // Jika tanggal sudah dipilih, panggil handleDateSelect untuk filter ulang
-                    if (selectedDate) {
-                      handleDateSelect(selectedDate);
-                    } else {
-                      // Jika belum ada tanggal, reset ke default
-                      setIsDataFiltered(false);
-                      const sortedAll = Array.isArray(garansiAccounts)
-                        ? [...garansiAccounts].sort(
-                            (a, b) =>
-                              new Date(b.warrantyDate).getTime() -
-                              new Date(a.warrantyDate).getTime()
-                          )
-                        : [];
-                      setSourceAccounts(sortedAll);
-                      setCurrentPage(1);
+            {/* Baris 1: Tipe Tanggal & Dropdowns */}
+            <div className="flex flex-col lg:flex-row gap-4 items-end">
+              {/* Pilihan Tipe Tanggal */}
+              <div className="flex-1 w-full space-y-3">
+                <Label className="text-base font-semibold text-gray-700">
+                  Filter Tanggal
+                </Label>
+                <div className="flex gap-2">
+                  <Button
+                    variant={
+                      filterType === "warrantyDate" ? "default" : "outline"
                     }
-                  }}
-                  className="flex-1"
-                >
-                  <CalendarPlus className="mr-2 h-4 w-4" />
-                  Cari berdasarkan Tanggal Dibuat
-                </Button>
-                <Button
-                  variant={filterType === "expiresAt" ? "default" : "outline"}
-                  onClick={() => {
-                    setFilterType("expiresAt");
-                    if (selectedDate) {
-                      handleDateSelect(selectedDate);
-                    } else {
-                      setIsDataFiltered(false);
-                      const sortedAll = Array.isArray(garansiAccounts)
-                        ? [...garansiAccounts].sort(
-                            (a, b) =>
-                              new Date(b.warrantyDate).getTime() -
-                              new Date(a.warrantyDate).getTime()
-                          )
-                        : [];
-                      setSourceAccounts(sortedAll);
-                      setCurrentPage(1);
-                    }
-                  }}
-                  className="flex-1"
-                >
-                  <Clock className="mr-2 h-4 w-4" />
-                  Cari berdasarkan Tanggal Kadaluarsa
-                </Button>
+                    onClick={() => {
+                      setFilterType("warrantyDate");
+                      if (selectedDate) handleDateSelect(selectedDate);
+                    }}
+                    className="flex-1 text-xs md:text-sm h-10"
+                  >
+                    <CalendarPlus className="mr-2 h-4 w-4" /> Tgl Dibuat
+                  </Button>
+                  <Button
+                    variant={filterType === "expiresAt" ? "default" : "outline"}
+                    onClick={() => {
+                      setFilterType("expiresAt");
+                      if (selectedDate) handleDateSelect(selectedDate);
+                    }}
+                    className="flex-1 text-xs md:text-sm h-10"
+                  >
+                    <Clock className="mr-2 h-4 w-4" /> Tgl Expired
+                  </Button>
+                </div>
+              </div>
+
+              {/* Filter Platform & Tipe */}
+              <div className="w-full lg:w-1/2 space-y-3">
+                <Label className="text-base font-semibold text-gray-700">
+                  Filter Spesifik
+                </Label>
+                <div className="flex gap-2">
+                  {/* Dropdown Platform */}
+                  <Select
+                    value={platformFilter}
+                    onValueChange={setPlatformFilter}
+                  >
+                    <SelectTrigger className="h-10 bg-white flex-1">
+                      <div className="flex items-center gap-2 truncate">
+                        <Filter className="h-4 w-4 text-gray-500" />
+                        <SelectValue placeholder="Semua Platform" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Platform</SelectItem>
+                      {PLATFORM_LIST.map((p) => (
+                        <SelectItem key={p.key} value={p.key}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* Dropdown Tipe (BARU) */}
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="h-10 bg-white w-[140px]">
+                      <div className="flex items-center gap-2 truncate">
+                        <SelectValue placeholder="Semua Tipe" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Tipe</SelectItem>
+                      <SelectItem value="private">Private</SelectItem>
+                      <SelectItem value="sharing">Sharing</SelectItem>
+                      <SelectItem value="vip">VIP</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Tombol Reset */}
+                  {(platformFilter !== "all" || typeFilter !== "all") && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10"
+                      onClick={() => {
+                        setPlatformFilter("all");
+                        setTypeFilter("all");
+                      }}
+                      title="Hapus Filter"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
+
+            {/* Baris 2: Input Kalender */}
             <div className="space-y-3">
-              <Label className="text-base font-semibold text-gray-700">
-                Pilih Tanggal (Filter)
-              </Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-full justify-start text-left font-normal h-14 border-gray-300",
+                      "w-full justify-start text-left font-normal h-12 border-gray-300",
                       !selectedDate && "text-muted-foreground"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-5 w-5" />
                     {selectedDate
                       ? format(selectedDate, "dd MMMM yyyy")
-                      : "Pilih tanggal untuk filter (opsional)"}
+                      : "Pilih tanggal (Opsional)"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <CalendarComponent
                     mode="single"
                     selected={selectedDate}
-                    onSelect={handleDateSelect} // Akan memfilter & reset page
-                    captionLayout="dropdown"
-                    fromYear={new Date().getFullYear() - 2}
-                    toYear={new Date().getFullYear() + 5}
+                    onSelect={handleDateSelect}
                     initialFocus
                   />
                 </PopoverContent>
               </Popover>
-              {selectedDate && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDateSelect(undefined)}
-                  className="text-xs text-blue-600"
-                >
-                  Hapus Filter Tanggal
-                </Button>
+
+              {/* Indikator Filter Aktif */}
+              {(selectedDate ||
+                platformFilter !== "all" ||
+                typeFilter !== "all") && (
+                <div className="flex items-center justify-between bg-blue-50 p-2 rounded text-xs text-blue-700 flex-wrap gap-2">
+                  <span>
+                    Menampilkan:
+                    {selectedDate && (
+                      <strong> {format(selectedDate, "dd MMM yyyy")}</strong>
+                    )}
+                    {selectedDate &&
+                      (platformFilter !== "all" || typeFilter !== "all") &&
+                      " + "}
+                    {platformFilter !== "all" && (
+                      <strong> Platform {platformFilter}</strong>
+                    )}
+                    {platformFilter !== "all" && typeFilter !== "all" && " + "}
+                    {typeFilter !== "all" && (
+                      <strong> Tipe {typeFilter}</strong>
+                    )}
+                  </span>
+                  <Button
+                    variant="link"
+                    className="h-auto p-0 text-blue-800 ml-auto"
+                    onClick={() => {
+                      handleDateSelect(undefined);
+                      setPlatformFilter("all");
+                      setTypeFilter("all");
+                    }}
+                  >
+                    Reset Semua
+                  </Button>
+                </div>
               )}
-              <p className="text-sm text-gray-500">
-                {filterType === "warrantyDate"
-                  ? "Menampilkan akun yang DITAMBAHKAN pada tanggal ini."
-                  : "Menampilkan akun yang AKAN KADALUARSA pada tanggal ini."}
-              </p>
             </div>
           </div>
 
@@ -319,44 +381,35 @@ function GaransiView() {
 
           {hasResultsToShow && (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <h3 className="text-lg font-semibold">
-                  {isDataFiltered // Judul dinamis berdasarkan filter aktif
-                    ? `Hasil Filter ${
-                        filterType === "warrantyDate"
-                          ? "Tanggal Dibuat"
-                          : "Tanggal Kadaluarsa"
-                      } (${
-                        selectedDate ? format(selectedDate, "dd MMM yyyy") : ""
-                      })`
-                    : `Akun Garansi Terbaru Ditambahkan`}{" "}
-                  (Hal {currentPage}/{totalPages}, Total {totalItems}){" "}
-                  {/* Info Halaman & Total */}
+                  Daftar Garansi (Total: {totalItems})
                 </h3>
                 <Button
                   onClick={copyAllAccounts}
                   size="sm"
-                  disabled={paginatedAccounts.length === 0}
+                  variant="secondary"
+                  className="w-full sm:w-auto"
                 >
-                  <Copy className="h-4 w-4 mr-2" /> Copy Akun Hal Ini (
-                  {paginatedAccounts.length})
+                  <Copy className="h-4 w-4 mr-2" /> Copy{" "}
+                  {paginatedAccounts.length} Akun (Hal Ini)
                 </Button>
               </div>
+
               <Alert className="bg-blue-50 border-blue-200">
                 <Database className="h-4 w-4" />
                 <AlertDescription>
-                  Data ini dari database garansi terpisah &{" "}
-                  <strong>TIDAK mempengaruhi stok utama</strong>. Total garansi
-                  di sistem:{" "}
+                  Data garansi terpisah dari stok utama. Total Global:{" "}
                   <strong>
                     {garansiAccounts ? garansiAccounts.length : 0}
                   </strong>
                   .
                 </AlertDescription>
               </Alert>
-              <div className="overflow-x-auto">
+
+              <div className="overflow-x-auto border rounded-md">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="bg-gray-50">
                     <TableRow>
                       <TableHead>Email</TableHead>
                       <TableHead>Password</TableHead>
@@ -364,11 +417,8 @@ function GaransiView() {
                       <TableHead>Tipe</TableHead>
                       <TableHead>Ditambahkan</TableHead>
                       <TableHead>Kadaluarsa</TableHead>
-                      <TableHead className="whitespace-nowrap">
-                        Status
-                      </TableHead>{" "}
-                      {/* Lebar Otomatis */}
-                      <TableHead>Copy</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -376,76 +426,67 @@ function GaransiView() {
                       const daysLeft = getRemainingDays(account);
                       const isExpired = daysLeft < 0;
                       const isExpiringToday = daysLeft === 0 && !isExpired;
-                      let statusVariant:
-                        | "destructive"
-                        | "secondary"
-                        | "default" = "default";
-                      let statusBgColor = "bg-green-600 hover:bg-green-700";
-                      if (isExpired) {
-                        statusVariant = "destructive";
-                        statusBgColor = "bg-red-600 hover:bg-red-700";
-                      } else if (isExpiringToday) {
-                        statusVariant = "secondary";
-                        statusBgColor = "bg-yellow-500 hover:bg-yellow-600";
-                      }
                       return (
                         <TableRow key={account.id}>
-                          <TableCell className="font-medium">
+                          <TableCell className="font-medium text-sm">
                             {account.email}
                           </TableCell>
-                          <TableCell>{account.password}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{account.platform}</Badge>
+                          <TableCell className="text-sm font-mono bg-gray-50 px-2 py-1 rounded w-fit">
+                            {account.password}
                           </TableCell>
                           <TableCell>
                             <Badge
-                              variant={
-                                account.type === "vip"
-                                  ? "default"
-                                  : account.type === "private"
-                                  ? "secondary"
-                                  : "outline"
-                              }
+                              variant="outline"
+                              className="whitespace-nowrap"
                             >
-                              {account.type}
+                              {account.platform}
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {" "}
+                            <Badge variant="secondary" className="text-[10px]">
+                              {account.type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-gray-500">
                             {account.warrantyDate
                               ? format(
                                   new Date(account.warrantyDate),
                                   "dd MMM yyyy"
                                 )
-                              : "-"}{" "}
+                              : "-"}
                           </TableCell>
-                          <TableCell>
-                            {" "}
+                          <TableCell className="text-xs text-gray-500">
                             {account.expiresAt
                               ? format(
                                   new Date(account.expiresAt),
                                   "dd MMM yyyy"
                                 )
-                              : "-"}{" "}
+                              : "-"}
                           </TableCell>
                           <TableCell>
                             <Badge
-                              variant={statusVariant}
-                              className={cn("text-white", statusBgColor)}
+                              className={cn(
+                                "text-[10px] text-white whitespace-nowrap",
+                                isExpired
+                                  ? "bg-red-600"
+                                  : isExpiringToday
+                                  ? "bg-yellow-500"
+                                  : "bg-green-600"
+                              )}
                             >
                               {isExpired
-                                ? `Expired (${Math.abs(daysLeft)} hr lalu)`
+                                ? "Expired"
                                 : isExpiringToday
-                                ? "Exp Hari Ini"
-                                : `Aktif (${daysLeft} hr)`}
+                                ? "Exp Today"
+                                : `Aktif (${daysLeft}h)`}
                             </Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-right">
                             <Button
                               onClick={() => copyAccountDetails(account)}
                               size="icon"
                               variant="ghost"
-                              className="h-8 w-8"
+                              className="h-8 w-8 hover:bg-blue-50 hover:text-blue-600"
                             >
                               <Copy className="h-4 w-4" />
                             </Button>
@@ -472,40 +513,11 @@ function GaransiView() {
                             ? "pointer-events-none opacity-50"
                             : ""
                         }
-                        aria-disabled={currentPage === 1}
                       />
                     </PaginationItem>
-
-                    {Array.from({ length: totalPages }, (_, i) => i + 1)
-                      .filter(
-                        (page) =>
-                          page === 1 ||
-                          page === totalPages ||
-                          (page >= currentPage - 1 && page <= currentPage + 1)
-                      )
-                      .map((page, index, arr) => (
-                        <React.Fragment key={page}>
-                          {/* Tambah Ellipsis jika ada gap */}
-                          {index > 0 && arr[index - 1] + 1 < page && (
-                            <PaginationItem>
-                              <PaginationEllipsis />
-                            </PaginationItem>
-                          )}
-                          <PaginationItem>
-                            <PaginationLink
-                              href="#"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setCurrentPage(page);
-                              }}
-                              isActive={currentPage === page}
-                            >
-                              {page}
-                            </PaginationLink>
-                          </PaginationItem>
-                        </React.Fragment>
-                      ))}
-
+                    <div className="flex items-center gap-1 text-sm mx-2">
+                      Halaman {currentPage} dari {totalPages}
+                    </div>
                     <PaginationItem>
                       <PaginationNext
                         href="#"
@@ -520,7 +532,6 @@ function GaransiView() {
                             ? "pointer-events-none opacity-50"
                             : ""
                         }
-                        aria-disabled={currentPage === totalPages}
                       />
                     </PaginationItem>
                   </PaginationContent>
@@ -530,11 +541,23 @@ function GaransiView() {
           )}
 
           {isFilteredNoResults && (
-            <div className="text-center py-8 text-gray-500">
-              <p>
-                Tidak ada akun garansi ditemukan untuk filter tanggal{" "}
-                {selectedDate ? format(selectedDate, "dd MMMM yyyy") : ""}.
+            <div className="text-center py-12 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+              <Database className="h-10 w-10 mx-auto text-gray-300 mb-2" />
+              <p className="text-gray-600 font-medium">Data Tidak Ditemukan</p>
+              <p className="text-sm text-gray-500 mt-1">
+                Tidak ada akun garansi yang cocok dengan filter.
               </p>
+              <Button
+                variant="link"
+                onClick={() => {
+                  handleDateSelect(undefined);
+                  setPlatformFilter("all");
+                  setTypeFilter("all");
+                }}
+                className="mt-2 text-blue-600"
+              >
+                Hapus Semua Filter
+              </Button>
             </div>
           )}
 
@@ -553,7 +576,6 @@ function GaransiView() {
   );
 }
 
-// Komponen Utama Halaman Garansi (Tidak Berubah)
 export default function GaransiClientPage() {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -561,17 +583,12 @@ export default function GaransiClientPage() {
 
   useEffect(() => {
     const user = localStorage.getItem("currentUser");
-    if (user) {
-      setCurrentUser(JSON.parse(user));
-    }
+    if (user) setCurrentUser(JSON.parse(user));
     setIsLoadingAuth(false);
   }, []);
 
   const isAdmin = currentUser?.role === "admin";
-
-  if (isLoadingAuth) {
-    return <LoadingSpinner />;
-  }
+  if (isLoadingAuth) return <LoadingSpinner />;
 
   return (
     <AccountProvider>

@@ -190,7 +190,7 @@ export default function LoginForm() {
           </form>
 
           {/* ... (Quick Login JSX tidak berubah) ... */}
-          <div className="mt-8 p-6 glass-morphism rounded-2xl">
+          {/* <div className="mt-8 p-6 glass-morphism rounded-2xl">
             <h3 className="font-bold text-zenith-primary mb-4 text-center">
               🚀 Quick Login
             </h3>
@@ -229,7 +229,7 @@ export default function LoginForm() {
             <p className="text-xs mt-4 text-center text-gray-600">
               💡 Klik "Use" untuk mengisi otomatis atau copy paste manual
             </p>
-          </div>
+          </div> */}
         </CardContent>
       </Card>
     </div>

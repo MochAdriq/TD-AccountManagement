@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input"; // Import Input
 import {
   Table,
   TableBody,
@@ -12,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAccounts } from "@/contexts/account-context";
-import { ListFilter, Edit, Trash, Filter, X } from "lucide-react";
+import { ListFilter, Edit, Trash, Filter, X, Search } from "lucide-react"; // Import Search Icon
 import EditAccountDialog from "./edit-account-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +45,6 @@ import {
   PaginationLink,
   PaginationPrevious,
   PaginationNext,
-  // PaginationEllipsis,
 } from "@/components/ui/pagination";
 
 import {
@@ -96,8 +96,9 @@ export default function AccountList({ type }: AccountListProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // --- STATE FILTER PLATFORM ---
+  // --- STATE FILTER & SEARCH ---
   const [platformFilter, setPlatformFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState(""); // State Search Baru
 
   useEffect(() => {
     if (!isContextLoading) {
@@ -108,10 +109,10 @@ export default function AccountList({ type }: AccountListProps) {
     }
   }, [isContextLoading]);
 
-  // Reset halaman ke 1 jika filter berubah
+  // Reset halaman ke 1 jika filter/search berubah
   useEffect(() => {
     setCurrentPage(1);
-  }, [platformFilter]);
+  }, [platformFilter, searchQuery]);
 
   const handleEdit = useCallback((account: Account) => {
     setEditingAccount(account);
@@ -126,14 +127,22 @@ export default function AccountList({ type }: AccountListProps) {
   // 1. Ambil data berdasarkan Tipe Akun
   const accountsByType = getAccountsByType(type);
 
-  // 2. Filter berdasarkan Platform
-  const filteredByPlatform = accountsByType.filter((acc) => {
-    if (platformFilter === "all") return true;
-    return acc.platform === platformFilter;
+  // 2. Filter Kombinasi (Platform + Search)
+  const filteredAccounts = accountsByType.filter((acc) => {
+    // Filter Platform
+    const matchesPlatform =
+      platformFilter === "all" || acc.platform === platformFilter;
+
+    // Filter Search (Email)
+    const matchesSearch =
+      searchQuery.trim() === "" ||
+      acc.email.toLowerCase().includes(searchQuery.toLowerCase());
+
+    return matchesPlatform && matchesSearch;
   });
 
   // 3. Sorting
-  const sortedAccounts = [...filteredByPlatform].sort(
+  const sortedAccounts = [...filteredAccounts].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
@@ -195,45 +204,70 @@ export default function AccountList({ type }: AccountListProps) {
   return (
     <>
       <Card className="border-gray-200 shadow-sm">
-        {/* HEADER DENGAN FILTER SEJAJAR */}
         <CardHeader className="bg-blue-600 text-white rounded-t-lg">
-          <CardTitle className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center">
               <ListFilter className="mr-2 h-5 w-5" />
               {getTitle(type)} Accounts
             </div>
 
-            {/* Filter Section di Header */}
-            <div className="flex items-center gap-2">
-              <Select value={platformFilter} onValueChange={setPlatformFilter}>
-                <SelectTrigger className="w-[180px] h-9 bg-white border-transparent text-gray-900 focus:ring-white/20">
-                  <div className="flex items-center gap-2 truncate">
-                    <Filter className="h-3.5 w-3.5 text-gray-500" />
-                    <SelectValue placeholder="Filter Platform" />
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Platform</SelectItem>
-                  {PLATFORM_LIST.map((p) => (
-                    <SelectItem key={p.key} value={p.key}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* AREA FILTER & SEARCH DI HEADER */}
+            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+              {/* INPUT SEARCH (BARU) */}
+              <div className="relative w-full sm:w-auto">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-500" />
+                <Input
+                  placeholder="Cari email..."
+                  className="h-9 pl-8 w-full sm:w-[200px] bg-white border-transparent text-gray-900 placeholder:text-gray-500 focus:ring-white/20 text-sm"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                {/* Tombol Clear Search */}
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
 
-              {/* Tombol Reset Filter (Putih Transparan) */}
-              {platformFilter !== "all" && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setPlatformFilter("all")}
-                  className="h-9 w-9 text-white/70 hover:text-white hover:bg-blue-500"
-                  title="Reset Filter"
+              {/* DROPDOWN FILTER PLATFORM */}
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Select
+                  value={platformFilter}
+                  onValueChange={setPlatformFilter}
                 >
-                  <X className="h-5 w-5" />
-                </Button>
-              )}
+                  <SelectTrigger className="w-full sm:w-[180px] h-9 bg-white border-transparent text-gray-900 focus:ring-white/20">
+                    <div className="flex items-center gap-2 truncate">
+                      <Filter className="h-3.5 w-3.5 text-gray-500" />
+                      <SelectValue placeholder="Filter Platform" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Platform</SelectItem>
+                    {PLATFORM_LIST.map((p) => (
+                      <SelectItem key={p.key} value={p.key}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Tombol Reset Filter Platform (Hanya muncul jika filter aktif) */}
+                {platformFilter !== "all" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setPlatformFilter("all")}
+                    className="h-9 w-9 text-white/70 hover:text-white hover:bg-blue-500"
+                    title="Reset Filter Platform"
+                  >
+                    <X className="h-5 w-5" />
+                  </Button>
+                )}
+              </div>
             </div>
           </CardTitle>
         </CardHeader>
@@ -248,17 +282,20 @@ export default function AccountList({ type }: AccountListProps) {
                 </p>
               ) : (
                 <>
-                  <Filter className="mx-auto h-10 w-10 text-gray-300 mb-3" />
+                  <Search className="mx-auto h-10 w-10 text-gray-300 mb-3" />
                   <p className="text-gray-900 font-medium">Tidak ditemukan</p>
                   <p className="text-sm text-gray-500">
-                    Tidak ada akun {type} untuk platform yang dipilih.
+                    Tidak ada akun yang cocok dengan filter/pencarian Anda.
                   </p>
                   <Button
                     variant="link"
-                    onClick={() => setPlatformFilter("all")}
+                    onClick={() => {
+                      setPlatformFilter("all");
+                      setSearchQuery("");
+                    }}
                     className="mt-2 text-blue-600"
                   >
-                    Reset Filter
+                    Reset Pencarian
                   </Button>
                 </>
               )}

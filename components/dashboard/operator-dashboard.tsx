@@ -40,10 +40,14 @@ import {
   History,
   Package,
   Loader2,
+  X,
   Search,
   Shield,
   AlertTriangle,
-  X,
+  Calendar,
+  Key,
+  User,
+  Monitor,
 } from "lucide-react";
 import { PLATFORM_LIST, PLATFORM_DISPLAY_NAMES } from "@/lib/constants";
 import type { PlatformType, AccountType } from "@prisma/client";
@@ -63,7 +67,7 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
-} from "@/components/ui/dialog"; // Import Dialog
+} from "@/components/ui/dialog";
 
 // --- HELPER FUNCTIONS ---
 type Profile = { profile: string; pin: string; used: boolean };
@@ -103,7 +107,6 @@ export default function OperatorDashboard() {
   const [customerIdentifier, setCustomerIdentifier] = useState("");
   const [selectedWaId, setSelectedWaId] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [historySearch, setHistorySearch] = useState("");
 
   // --- STATE HASIL ---
   const [requestResult, setRequestResult] = useState<{
@@ -117,8 +120,12 @@ export default function OperatorDashboard() {
     waName?: string;
   } | null>(null);
 
-  // --- STATE FILTER STOK ---
+  // --- STATE SEARCH ---
   const [stockSearch, setStockSearch] = useState("");
+  const [historyPlatformFilter, setHistoryPlatformFilter] = useState<
+    PlatformType | "all"
+  >("all");
+  const [historySearch, setHistorySearch] = useState("");
 
   // --- 1. HITUNG STOK (REAL-TIME) ---
   const stockSummary = useMemo(() => {
@@ -141,6 +148,36 @@ export default function OperatorDashboard() {
     });
     return stats;
   }, [accounts]);
+
+  // --- 2. HISTORY USER (UPDATE: Dengan Filter & Search) ---
+  const myHistory = useMemo(() => {
+    if (!user) return [];
+
+    let history = customerAssignments.filter(
+      (assign) => assign.operatorName === user.username
+    );
+
+    if (historyPlatformFilter !== "all") {
+      history = history.filter(
+        (item) => item.account?.platform === historyPlatformFilter
+      );
+    }
+
+    if (historySearch.trim()) {
+      const lowerSearch = historySearch.toLowerCase();
+      history = history.filter(
+        (item) =>
+          item.customerIdentifier.toLowerCase().includes(lowerSearch) ||
+          item.profileName.toLowerCase().includes(lowerSearch) ||
+          (item.account?.platform || "").toLowerCase().includes(lowerSearch)
+      );
+    }
+
+    return history.sort(
+      (a, b) =>
+        new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime()
+    );
+  }, [customerAssignments, user, historyPlatformFilter, historySearch]);
 
   // --- 3. HANDLE REQUEST ---
   const handleRequest = async () => {
@@ -241,57 +278,30 @@ export default function OperatorDashboard() {
     }\n📱 Customer: ${customerIdentifier}\n📞 WA Admin: ${
       requestResult.waName || "-"
     }\n⏱️ Expired: ${new Date(requestResult.expiresAt).toLocaleDateString(
-      "id-ID"
+      "id-ID",
+      { day: "numeric", month: "long", year: "numeric" }
     )} (${daysLeft} hari)\n\nMelanggar? Akun ditarik + denda Rp300K\nTerima kasih!\nContact: @TRUSTDIGITAL001`;
   };
-
-  const [historyPlatformFilter, setHistoryPlatformFilter] = useState<
-    PlatformType | "all"
-  >("all");
-
-  // --- 2. HISTORY USER (UPDATE: Dengan Filter & Search) ---
-  const myHistory = useMemo(() => {
-    if (!user) return [];
-
-    // 1. Ambil history milik user ini saja
-    let history = customerAssignments.filter(
-      (assign) => assign.operatorName === user.username
-    );
-
-    // 2. Filter by Platform
-    if (historyPlatformFilter !== "all") {
-      history = history.filter(
-        (item) => item.account?.platform === historyPlatformFilter
-      );
-    }
-
-    // 3. Filter by Search Text (BARU)
-    if (historySearch.trim()) {
-      const lowerSearch = historySearch.toLowerCase();
-      history = history.filter(
-        (item) =>
-          item.customerIdentifier.toLowerCase().includes(lowerSearch) ||
-          item.profileName.toLowerCase().includes(lowerSearch) ||
-          (item.account?.platform || "").toLowerCase().includes(lowerSearch)
-      );
-    }
-
-    // 4. Sort terbaru di atas
-    return history.sort(
-      (a, b) =>
-        new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime()
-    );
-  }, [customerAssignments, user, historyPlatformFilter, historySearch]); // <--- Jangan lupa tambah dependency historySearch
 
   if (isLoading)
     return <div className="p-8 text-center">Memuat workspace...</div>;
 
   return (
     <div className="space-y-8">
-      {/* --- HEADER & TOOLBAR OPERATOR --- */}
+      {/* --- HEADER & TOOLBAR --- */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-lg shadow-sm border border-blue-100 gap-4">
-        <div className="flex items-center gap-2 text-gray-600">
-          <span className="font-semibold text-sm uppercase tracking-wide text-gray-500"></span>
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center border border-blue-200">
+            <User className="h-5 w-5 text-blue-600" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">
+              Operator
+            </span>
+            <span className="text-sm font-bold text-gray-800 capitalize">
+              {user?.username || "Unknown"}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto">
@@ -340,31 +350,35 @@ export default function OperatorDashboard() {
       {/* --- GRID UTAMA --- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         {/* KOLOM KIRI: STOK */}
-        <div className="lg:col-span-1 h-[370px]">
-          <Card className="border-blue-200 shadow-md overflow-hidden flex flex-col h-full ">
+        <div className="lg:col-span-1 h-[385px]">
+          <Card className="border-blue-200 shadow-md overflow-hidden flex flex-col h-full">
             <CardHeader className="bg-slate-50 border-b pb-3">
               <CardTitle className="flex items-center text-lg">
                 <Package className="mr-2 h-5 w-5 text-blue-600" />
                 Info Stok Real-time
               </CardTitle>
-              <div className="pt-2">
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-                  <Input
-                    placeholder="Cari platform..."
-                    className="h-8 pl-8 text-xs"
-                    value={stockSearch}
-                    onChange={(e) => setStockSearch(e.target.value)}
-                  />
-                </div>
+              <div className="pt-2 relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+                <Input
+                  placeholder="Cari platform atau tipe..."
+                  className="h-8 pl-8 text-xs"
+                  value={stockSearch}
+                  onChange={(e) => setStockSearch(e.target.value)}
+                />
               </div>
             </CardHeader>
 
-            <ScrollArea className="flex-1 p-4 bg-gray-50/50">
+            <ScrollArea className="flex-1 p-4 bg-gray-50/50 h-[400px]">
               <div className="space-y-3">
-                {PLATFORM_LIST.filter((p) =>
-                  p.name.toLowerCase().includes(stockSearch.toLowerCase())
-                ).map((p) => {
+                {PLATFORM_LIST.filter((p) => {
+                  const searchTerm = stockSearch.toLowerCase();
+                  const nameMatch = p.name.toLowerCase().includes(searchTerm);
+                  const typeMatch =
+                    searchTerm.includes("priv") ||
+                    searchTerm.includes("shar") ||
+                    searchTerm.includes("vip");
+                  return nameMatch || (typeMatch && nameMatch);
+                }).map((p) => {
                   const stock = stockSummary[p.key];
                   if (!stock && !stockSearch) return null;
                   const total =
@@ -435,7 +449,7 @@ export default function OperatorDashboard() {
         </div>
 
         {/* KOLOM KANAN: REQUEST */}
-        <div className="lg:col-span-2 flex flex-col gap-6 h-[370px]">
+        <div className="lg:col-span-2 flex flex-col gap-6 h-[385px]">
           <Card className="border-blue-200 shadow-md h-full">
             <CardHeader className="bg-blue-600 text-white rounded-t-lg py-4">
               <CardTitle className="flex items-center text-lg">
@@ -518,13 +532,7 @@ export default function OperatorDashboard() {
               <div className="mt-6 pt-4 border-t flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="text-sm text-gray-500">
                   {selectedPlatform && selectedType ? (
-                    <span>
-                      Stok terpilih:{" "}
-                      <Badge variant="secondary" className="ml-1 text-sm">
-                        {/* @ts-ignore */}
-                        {stockSummary[selectedPlatform]?.[selectedType] || 0}
-                      </Badge>
-                    </span>
+                    <span> </span>
                   ) : (
                     "Pilih platform & tipe untuk cek stok"
                   )}
@@ -540,7 +548,7 @@ export default function OperatorDashboard() {
                       Memproses...
                     </>
                   ) : (
-                    "🚀 Request Accounts"
+                    "Request Accounts"
                   )}
                 </Button>
               </div>
@@ -549,61 +557,107 @@ export default function OperatorDashboard() {
         </div>
       </div>
 
-      {/* --- POPUP HASIL REQUEST (DIALOG) --- */}
+      {/* --- POPUP HASIL REQUEST (DIALOG BARU) --- */}
       <Dialog
         open={!!requestResult}
         onOpenChange={(open) => !open && setRequestResult(null)}
       >
         <DialogContent className="sm:max-w-lg border-2 border-green-500">
-          <DialogHeader>
-            <DialogTitle className="flex items-center text-green-700 text-xl">
-              <CheckCircle className="mr-2 h-6 w-6" />
+          <DialogHeader className="bg-green-50 -mx-6 -mt-6 p-6 border-b border-green-100">
+            <DialogTitle className="flex items-center text-green-800 text-2xl">
+              <CheckCircle className="mr-2 h-8 w-8" />
               Request Berhasil!
             </DialogTitle>
-            <DialogDescription>
-              Akun berhasil diambil. Silakan salin data berikut.
+            <DialogDescription className="text-green-700">
+              Stok berhasil dialokasikan. Silakan salin data di bawah.
             </DialogDescription>
           </DialogHeader>
 
           {requestResult && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-              <div className="space-y-1">
-                <Label className="text-xs text-gray-500 uppercase">Email</Label>
-                <div className="bg-slate-100 p-2 rounded border font-mono font-bold select-all text-sm truncate">
-                  {requestResult.email}
+            <div className="py-4 space-y-6">
+              {/* BADGE PLATFORM */}
+              <div className="flex items-center justify-between border-b pb-4">
+                <div className="flex items-center gap-2">
+                  <Monitor className="h-5 w-5 text-gray-500" />
+                  <span className="font-bold text-lg text-gray-800">
+                    {requestResult.platform}
+                  </span>
+                </div>
+                <Badge
+                  variant="secondary"
+                  className="uppercase text-sm px-3 py-1"
+                >
+                  {requestResult.type}
+                </Badge>
+              </div>
+
+              {/* INFO LOGIN (EMAIL & PASS) */}
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2 text-slate-500 text-xs uppercase font-bold tracking-wider">
+                  <Key className="h-3 w-3" /> Info Login
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <Label className="text-xs text-gray-400">Email</Label>
+                    <div className="font-mono font-bold text-lg text-gray-900 select-all break-all">
+                      {requestResult.email}
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-gray-400">Password</Label>
+                    <div className="font-mono font-bold text-lg text-gray-900 select-all">
+                      {requestResult.password}
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-gray-500 uppercase">
-                  Password
-                </Label>
-                <div className="bg-slate-100 p-2 rounded border font-mono font-bold select-all text-sm truncate">
-                  {requestResult.password}
+
+              {/* INFO PROFIL & DURASI */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                  <div className="flex items-center gap-1 text-blue-600 text-xs font-bold mb-1">
+                    <User className="h-3 w-3" /> PROFIL
+                  </div>
+                  <div className="font-bold text-blue-900 text-base">
+                    {requestResult.profile}
+                  </div>
+                  <div className="text-xs text-blue-700 mt-1">
+                    PIN:{" "}
+                    <span className="font-mono font-bold">
+                      {requestResult.pin}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-gray-500 uppercase">
-                  Profile
-                </Label>
-                <div className="bg-blue-50 p-2 rounded border border-blue-200 font-bold text-blue-800 text-sm">
-                  {requestResult.profile}
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-gray-500 uppercase">PIN</Label>
-                <div className="bg-blue-50 p-2 rounded border border-blue-200 font-bold text-blue-800 text-sm">
-                  {requestResult.pin}
+
+                <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+                  <div className="flex items-center gap-1 text-orange-600 text-xs font-bold mb-1">
+                    <Calendar className="h-3 w-3" /> BERLAKU SAMPAI
+                  </div>
+                  {/* UPDATE: FORMAT TANGGAL LENGKAP DENGAN TAHUN */}
+                  <div className="font-bold text-orange-900 text-sm">
+                    {new Date(requestResult.expiresAt).toLocaleDateString(
+                      "id-ID",
+                      { day: "numeric", month: "long", year: "numeric" }
+                    )}
+                  </div>
+                  <div className="text-xs text-orange-700 mt-1">
+                    (Tahun {new Date(requestResult.expiresAt).getFullYear()})
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          <DialogFooter className="sm:justify-between gap-2">
-            <Button variant="outline" onClick={() => setRequestResult(null)}>
+          <DialogFooter className="sm:justify-between gap-2 pt-4 border-t">
+            <Button
+              variant="ghost"
+              onClick={() => setRequestResult(null)}
+              className="text-gray-500"
+            >
               Tutup
             </Button>
             <Button
-              className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
+              className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto h-12 text-base font-bold shadow-lg shadow-green-200"
               onClick={() => {
                 navigator.clipboard.writeText(getCopyText());
                 toast({
@@ -612,19 +666,17 @@ export default function OperatorDashboard() {
                 });
               }}
             >
-              <Copy className="mr-2 h-4 w-4" /> Copy Format Chat
+              <Copy className="mr-2 h-5 w-5" /> Copy Format Chat
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* HISTORY */}
-      {/* HISTORY */}
       <div className="mt-8">
         <Card className="border shadow-sm">
           <CardHeader className="border-b bg-gray-50/50 py-3 px-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              {/* Judul & Total */}
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-blue-100 rounded-md">
                   <History className="h-4 w-4 text-blue-600" />
@@ -638,10 +690,7 @@ export default function OperatorDashboard() {
                   </p>
                 </div>
               </div>
-
-              {/* Filter Platform History */}
               <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                {/* INPUT SEARCH BARU */}
                 <div className="relative w-full sm:w-48">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
                   <Input
@@ -651,8 +700,6 @@ export default function OperatorDashboard() {
                     onChange={(e) => setHistorySearch(e.target.value)}
                   />
                 </div>
-
-                {/* DROPDOWN FILTER (YANG LAMA) */}
                 <Select
                   value={historyPlatformFilter}
                   onValueChange={(v) =>
@@ -674,13 +721,9 @@ export default function OperatorDashboard() {
               </div>
             </div>
           </CardHeader>
-
           <CardContent className="p-0">
-            {/* SCROLL AREA: Max Height 400px agar tidak memanjang ke bawah */}
             <ScrollArea className="h-[400px]">
               <div className="min-w-[600px]">
-                {" "}
-                {/* Min-width agar tabel tidak hancur di mobile */}
                 <Table>
                   <TableHeader className="bg-white sticky top-0 z-10 shadow-sm">
                     <TableRow className="hover:bg-transparent">
@@ -722,14 +765,23 @@ export default function OperatorDashboard() {
                           key={item.id}
                           className="hover:bg-blue-50/50 border-b border-gray-100"
                         >
-                          <TableCell className="text-xs text-gray-500">
-                            {new Date(item.assignedAt).toLocaleString("id-ID", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric", // <--- Tambahan di sini
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                          <TableCell className="text-xs text-gray-500 py-3">
+                            <div className="font-medium text-gray-700">
+                              {new Date(item.assignedAt).toLocaleDateString(
+                                "id-ID",
+                                {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                }
+                              )}
+                            </div>
+                            <div className="text-[10px] opacity-70">
+                              {new Date(item.assignedAt).toLocaleTimeString(
+                                "id-ID",
+                                { hour: "2-digit", minute: "2-digit" }
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="font-medium text-sm text-gray-800 py-3">
                             {item.customerIdentifier}
