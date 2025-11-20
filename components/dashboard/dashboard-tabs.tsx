@@ -12,7 +12,7 @@ import AccountForm from "@/components/accounts/account-form";
 import AccountList from "@/components/accounts/account-list";
 import RequestAccount from "@/components/requests/request-account";
 import BulkImport from "@/components/import/bulk-import";
-import ReportedAccounts from "@/components/reports/reported-accounts";
+// import ReportedAccounts dihapus karena sudah tidak dipakai di sini (pindah halaman)
 import CustomerStatistics from "@/components/stats/customer-statistics";
 import UserManagement from "@/components/users/user-management";
 import ActivityLogs from "@/components/dashboard/activity-logs";
@@ -31,7 +31,7 @@ import {
   ShoppingCart,
   Star,
   PlusCircle,
-  MessageSquare, // <-- PERUBAHAN: Ikon baru
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,41 +42,35 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import AccountSearch from "@/components/accounts/account-search";
-import { useAccounts } from "@/contexts/account-context"; // Impor hook useAccounts
-import type { AccountType } from "@prisma/client"; // Impor AccountType dari Prisma
+import { useAccounts } from "@/contexts/account-context";
+import type { AccountType } from "@prisma/client";
 import LoadingSpinner from "../shared/loading-spinner";
 import Link from "next/link";
-import { useAuth } from "@/lib/auth"; // Path sudah benar
-
-import WhatsappManagement from "@/components/whatsapp/WhatsappManagement"; // <-- Nama file diperbaiki
+import { useAuth } from "@/lib/auth";
+import WhatsappManagement from "@/components/whatsapp/WhatsappManagement";
 
 export default function DashboardTabs() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
   const { isLoading, refreshData } = useAccounts();
-  // State activeTab sekarang menggunakan AccountType dari Prisma
   const [activeTab, setActiveTab] = useState<AccountType>("private");
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
-  const [isGaransiOpen, setIsGaransiOpen] = useState(false); // State ini masih ada, pastikan penggunaannya
   const [isActivityLogsOpen, setIsActivityLogsOpen] = useState(false);
   const [isBackupOpen, setIsBackupOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  // --- PERUBAHAN: State baru untuk dialog WA ---
   const [isWhatsappManagementOpen, setIsWhatsappManagementOpen] =
     useState(false);
-  // --- AKHIR PERUBAHAN ---
 
-  // Opsional: Set default tab admin berdasarkan 'user' dari useAuth
   useEffect(() => {
     if (user?.role === "admin") {
       setActiveTab("private");
     }
-  }, [user]); // Jalankan saat 'user' berubah
+  }, [user]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -88,12 +82,10 @@ export default function DashboardTabs() {
     return <LoadingSpinner />;
   }
 
-  // JSX tidak berubah dari sini ke bawah
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        {" "}
-        <NotificationSystem />{" "}
+        <NotificationSystem />
       </div>
       <Tabs
         value={activeTab}
@@ -121,65 +113,54 @@ export default function DashboardTabs() {
                   value="vip"
                   className="px-6 rounded-md data-[state=active]:bg-yellow-500 data-[state=active]:text-white"
                 >
-                  <Star className="w-4 h-4 mr-2" /> vip
+                  <Star className="w-4 h-4 mr-2" /> VIP
                 </TabsTrigger>
               </TabsList>
               <div className="flex items-center space-x-2">
-                {/* Tombol Garansi */}
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      {/* Pastikan Link/Button Garansi */}
-                      <Link href="/dashboard/garansi" passHref>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="text-blue-600 border-blue-300 hover:bg-blue-600 hover:text-white"
-                        >
-                          <Shield className="h-4 w-4" />
-                        </Button>
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Cek Garansi Akun (Halaman Baru)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                {/* Tombol Reported */}
-                <Dialog>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="text-blue-600 border-blue-300 hover:bg-blue-600 hover:text-white"
-                        >
-                          <AlertTriangle className="h-4 w-4" />
-                        </Button>
-                      </DialogTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Lihat Akun Bermasalah</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <DialogContent className="max-w-6xl">
-                    <DialogHeader>
-                      <DialogTitle>Reported Accounts</DialogTitle>
-                    </DialogHeader>
-                    <ReportedAccounts />
-                  </DialogContent>
-                </Dialog>
+                {/* Tombol Garansi (Link ke halaman baru) */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link href="/dashboard/garansi" passHref>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="text-blue-600 border-blue-300 hover:bg-blue-600 hover:text-white"
+                      >
+                        <Shield className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Cek Garansi Akun</p>
+                  </TooltipContent>
+                </Tooltip>
 
-                {/* // <-- PERBAIKAN: Tombol Backup dipindahkan dari sini
-                 */}
+                {/* --- PERUBAHAN: Tombol Reported (Link ke halaman baru) --- */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link href="/dashboard/reported" passHref>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="text-red-600 border-red-300 hover:bg-red-600 hover:text-white"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Lihat Akun Bermasalah (Halaman Penuh)</p>
+                  </TooltipContent>
+                </Tooltip>
+                {/* --- AKHIR PERUBAHAN --- */}
               </div>
+
               {/* Separator & Admin Buttons */}
-              {isAdmin && ( // Hanya tampilkan jika admin
+              {isAdmin && (
                 <>
                   <div className="h-6 w-px bg-gray-300"></div>
                   <div className="flex items-center space-x-2">
-                    {/* <-- PERBAIKAN: Tombol Backup dipindah ke sini --> */}
+                    {/* Tombol Backup */}
                     <Dialog open={isBackupOpen} onOpenChange={setIsBackupOpen}>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -204,7 +185,6 @@ export default function DashboardTabs() {
                         <OfflineBackup />
                       </DialogContent>
                     </Dialog>
-                    {/* <-- AKHIR PERBAIKAN --> */}
 
                     {/* Tombol Statistik */}
                     <Dialog open={isStatsOpen} onOpenChange={setIsStatsOpen}>
@@ -233,6 +213,7 @@ export default function DashboardTabs() {
                         <CustomerStatistics />
                       </DialogContent>
                     </Dialog>
+
                     {/* Tombol Activity Log */}
                     <Dialog
                       open={isActivityLogsOpen}
@@ -261,6 +242,7 @@ export default function DashboardTabs() {
                         <ActivityLogs />
                       </DialogContent>
                     </Dialog>
+
                     {/* Tombol User Management */}
                     <Dialog
                       open={isUserManagementOpen}
@@ -295,7 +277,7 @@ export default function DashboardTabs() {
                       </DialogContent>
                     </Dialog>
 
-                    {/* --- PERUBAHAN: Tombol & Dialog Manajemen WA --- */}
+                    {/* Tombol Manajemen WA */}
                     <Dialog
                       open={isWhatsappManagementOpen}
                       onOpenChange={setIsWhatsappManagementOpen}
@@ -306,7 +288,7 @@ export default function DashboardTabs() {
                             <Button
                               variant="outline"
                               size="icon"
-                              className="text-green-600 border-green-300 hover:bg-green-600 hover:text-white" // Warna hijau
+                              className="text-green-600 border-green-300 hover:bg-green-600 hover:text-white"
                               disabled={!isAdmin}
                             >
                               <MessageSquare className="h-4 w-4" />
@@ -327,17 +309,16 @@ export default function DashboardTabs() {
                             📱 Manajemen Akun WhatsApp Operator
                           </DialogTitle>
                         </DialogHeader>
-                        <WhatsappManagement /> {/* <-- Komponen baru */}
+                        <WhatsappManagement />
                       </DialogContent>
                     </Dialog>
-                    {/* --- AKHIR PERUBAHAN --- */}
                   </div>
                 </>
               )}
             </div>
           </TooltipProvider>
 
-          {/* Bagian Kanan */}
+          {/* Bagian Kanan (Search, Add, Import, Request) */}
           <TooltipProvider>
             <div className="flex items-center space-x-2">
               {isAdmin && (
@@ -413,7 +394,6 @@ export default function DashboardTabs() {
                 </div>
               )}
 
-              {/* <-- PERBAIKAN: Tombol Request Account HANYA untuk Operator --> */}
               {!isAdmin && (
                 <Dialog open={isRequestOpen} onOpenChange={setIsRequestOpen}>
                   <Tooltip>
@@ -437,7 +417,6 @@ export default function DashboardTabs() {
                   </DialogContent>
                 </Dialog>
               )}
-              {/* <-- AKHIR PERBAIKAN --> */}
 
               {/* Tombol Refresh */}
               <Tooltip>
@@ -462,6 +441,7 @@ export default function DashboardTabs() {
                   <p>Muat ulang data.</p>
                 </TooltipContent>
               </Tooltip>
+
               {/* Tombol Search */}
               <Dialog open={isSearchOpen} onOpenChange={setIsSearchOpen}>
                 <Tooltip>
@@ -496,16 +476,13 @@ export default function DashboardTabs() {
         {/* Konten Tab */}
         <div className="mt-6">
           <TabsContent value="private">
-            {" "}
-            <AccountList type="private" />{" "}
+            <AccountList type="private" />
           </TabsContent>
           <TabsContent value="sharing">
-            {" "}
-            <AccountList type="sharing" />{" "}
+            <AccountList type="sharing" />
           </TabsContent>
           <TabsContent value="vip">
-            {" "}
-            <AccountList type="vip" />{" "}
+            <AccountList type="vip" />
           </TabsContent>
         </div>
       </Tabs>

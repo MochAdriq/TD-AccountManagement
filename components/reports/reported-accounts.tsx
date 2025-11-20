@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { useAccounts } from "@/contexts/account-context";
 import { useAuth } from "@/lib/auth";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, Filter, X } from "lucide-react"; // Tambah icon Filter & X
 import {
   Dialog,
   DialogContent,
@@ -25,9 +25,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"; // Tambah komponen Select
 import type { PlatformType } from "@prisma/client";
 // Import constants
-import { PLATFORM_DISPLAY_NAMES } from "@/lib/constants";
+import { PLATFORM_DISPLAY_NAMES, PLATFORM_LIST } from "@/lib/constants"; // Tambah PLATFORM_LIST
 
 export default function ReportedAccounts() {
   const { getReportedAccounts, resolveReport, reportAccount } = useAccounts();
@@ -40,7 +47,16 @@ export default function ReportedAccounts() {
   const [reportReason, setReportReason] = useState("");
   const [isReporting, setIsReporting] = useState(false);
 
-  const reportedAccounts = getReportedAccounts(); // Type is ReportedAccountWithAccount[]
+  // --- STATE FILTER ---
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
+
+  const reportedAccounts = getReportedAccounts(); // Data asli
+
+  // --- LOGIKA FILTER ---
+  const filteredReports = reportedAccounts.filter((report) => {
+    if (platformFilter === "all") return true;
+    return report.account?.platform === platformFilter;
+  });
 
   const handleResolve = (reportId: string) => {
     setSelectedReport(reportId);
@@ -110,63 +126,127 @@ export default function ReportedAccounts() {
           Report Account
         </TabsTrigger>
       </TabsList>
+
       <TabsContent value="list">
-        {reportedAccounts.length === 0 ? (
-          <div className="text-center py-4">
-            <CheckCircle className="mx-auto h-8 w-8 text-green-500 mb-2" />
-            <h3 className="text-base font-medium text-luna-primary dark:text-white mb-1">
-              No Reported Accounts
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              All accounts are working properly.
-            </p>
+        {/* --- FILTER SECTION --- */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+          <div className="text-sm text-muted-foreground">
+            Total Reports: <strong>{filteredReports.length}</strong>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={platformFilter} onValueChange={setPlatformFilter}>
+              <SelectTrigger className="w-[200px] bg-white">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-gray-500" />
+                  <SelectValue placeholder="Filter Platform" />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Platforms</SelectItem>
+                {PLATFORM_LIST.map((p) => (
+                  <SelectItem key={p.key} value={p.key}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Tombol Hapus Filter (Hanya muncul jika filter aktif) */}
+            {platformFilter !== "all" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setPlatformFilter("all")}
+                className="text-gray-500 hover:text-red-600 hover:bg-red-50"
+                title="Clear Filter"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* --- CONTENT SECTION --- */}
+        {filteredReports.length === 0 ? (
+          <div className="text-center py-10 border rounded-lg bg-gray-50">
+            {reportedAccounts.length === 0 ? (
+              // Case 1: Database kosong
+              <>
+                <CheckCircle className="mx-auto h-8 w-8 text-green-500 mb-2" />
+                <h3 className="text-base font-medium text-luna-primary dark:text-white mb-1">
+                  No Reported Accounts
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  All accounts are working properly.
+                </p>
+              </>
+            ) : (
+              // Case 2: Ada data tapi tidak cocok dengan filter
+              <>
+                <Filter className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                <h3 className="text-base font-medium text-gray-900 mb-1">
+                  No reports found
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  No reports match the selected platform filter.
+                </p>
+                <Button
+                  variant="link"
+                  onClick={() => setPlatformFilter("all")}
+                  className="mt-2 text-blue-600 h-auto p-0"
+                >
+                  Clear Filter
+                </Button>
+              </>
+            )}
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Email</TableHead>
-                <TableHead>Platform</TableHead> {/* Header added */}
-                <TableHead>Issue</TableHead>
-                <TableHead>Reported At</TableHead>
-                <TableHead>Reported By</TableHead>
-                <TableHead>Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {reportedAccounts.map((report) => (
-                <TableRow key={report.id}>
-                  <TableCell className="font-medium">
-                    {report.account?.email || "Email N/A"}
-                  </TableCell>
-                  {/* Platform Cell Updated */}
-                  <TableCell className="text-xs">
-                    {getPlatformDisplayName(report.account?.platform)}
-                  </TableCell>
-                  {/* End Platform Cell */}
-                  <TableCell>{report.reportReason}</TableCell>
-                  <TableCell>
-                    {new Date(report.reportedAt).toLocaleString()}
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {report.operatorName || "N/A"}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-luna-primary border-luna-primary hover:bg-luna-primary hover:text-white"
-                      onClick={() => handleResolve(report.id)}
-                    >
-                      Resolve
-                    </Button>
-                  </TableCell>
+          <div className="border rounded-md bg-white">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Platform</TableHead>
+                  <TableHead>Issue</TableHead>
+                  <TableHead>Reported At</TableHead>
+                  <TableHead>Reported By</TableHead>
+                  <TableHead>Action</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredReports.map((report) => (
+                  <TableRow key={report.id}>
+                    <TableCell className="font-medium">
+                      {report.account?.email || "Email N/A"}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {getPlatformDisplayName(report.account?.platform)}
+                    </TableCell>
+                    <TableCell>{report.reportReason}</TableCell>
+                    <TableCell>
+                      {new Date(report.reportedAt).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {report.operatorName || "N/A"}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-luna-primary border-luna-primary hover:bg-luna-primary hover:text-white"
+                        onClick={() => handleResolve(report.id)}
+                      >
+                        Resolve
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </TabsContent>
+
       <TabsContent value="report">
         <form onSubmit={handleReportAccount} className="space-y-4">
           <div className="grid md:grid-cols-2 gap-4">
@@ -203,6 +283,7 @@ export default function ReportedAccounts() {
           </Button>
         </form>
       </TabsContent>
+
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>

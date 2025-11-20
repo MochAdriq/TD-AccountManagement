@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAccounts } from "@/contexts/account-context";
-import { ListFilter, Edit, Trash } from "lucide-react";
+import { ListFilter, Edit, Trash, Filter, X } from "lucide-react";
 import EditAccountDialog from "./edit-account-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,9 +26,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import LoadingSpinner from "../shared/loading-spinner";
-import { useAuth } from "@/lib/auth"; // <-- Path diperbaiki
+import { useAuth } from "@/lib/auth";
 import type { Account, PlatformType } from "@prisma/client";
-import { PLATFORM_DISPLAY_NAMES } from "@/lib/constants";
+import { PLATFORM_DISPLAY_NAMES, PLATFORM_LIST } from "@/lib/constants";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import {
   Pagination,
@@ -37,7 +44,7 @@ import {
   PaginationLink,
   PaginationPrevious,
   PaginationNext,
-  PaginationEllipsis,
+  // PaginationEllipsis,
 } from "@/components/ui/pagination";
 
 import {
@@ -69,7 +76,7 @@ interface AccountListProps {
 }
 
 export default function AccountList({ type }: AccountListProps) {
-  const ITEMS_PER_PAGE = 10; // Jumlah item per halaman, bisa disesuaikan
+  const ITEMS_PER_PAGE = 10;
   const [currentPage, setCurrentPage] = useState(1);
   const {
     getAccountsByType,
@@ -89,6 +96,9 @@ export default function AccountList({ type }: AccountListProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // --- STATE FILTER PLATFORM ---
+  const [platformFilter, setPlatformFilter] = useState<string>("all");
+
   useEffect(() => {
     if (!isContextLoading) {
       const timer = setTimeout(() => setIsLoading(false), 200);
@@ -97,18 +107,33 @@ export default function AccountList({ type }: AccountListProps) {
       setIsLoading(true);
     }
   }, [isContextLoading]);
+
+  // Reset halaman ke 1 jika filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [platformFilter]);
+
   const handleEdit = useCallback((account: Account) => {
     setEditingAccount(account);
     setIsEditDialogOpen(true);
   }, []);
+
   const handleDelete = useCallback((accountId: string) => {
     setAccountIdToDelete(accountId);
     setIsDeleteDialogOpen(true);
   }, []);
 
-  const filteredAccounts = getAccountsByType(type); // Ambil data dulu
+  // 1. Ambil data berdasarkan Tipe Akun
+  const accountsByType = getAccountsByType(type);
 
-  const sortedAccounts = [...filteredAccounts].sort(
+  // 2. Filter berdasarkan Platform
+  const filteredByPlatform = accountsByType.filter((acc) => {
+    if (platformFilter === "all") return true;
+    return acc.platform === platformFilter;
+  });
+
+  // 3. Sorting
+  const sortedAccounts = [...filteredByPlatform].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
@@ -117,14 +142,13 @@ export default function AccountList({ type }: AccountListProps) {
     setIsDeleting(true);
     try {
       await deleteAccount(accountIdToDelete);
-
       const newTotalItems = sortedAccounts.length - 1;
       const newTotalPages = Math.ceil(newTotalItems / ITEMS_PER_PAGE);
 
       if (currentPage > newTotalPages && newTotalPages > 0) {
-        setCurrentPage(newTotalPages); // Mundur ke halaman terakhir yang baru
+        setCurrentPage(newTotalPages);
       } else if (newTotalItems === 0) {
-        setCurrentPage(1); // Reset ke halaman 1 jika tidak ada item tersisa
+        setCurrentPage(1);
       }
     } catch (error) {
       console.error("Error during delete confirmation:", error);
@@ -146,15 +170,14 @@ export default function AccountList({ type }: AccountListProps) {
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
-      setCurrentPage(totalPages); // Set ke halaman terakhir yang valid
+      setCurrentPage(totalPages);
     } else if (totalPages === 0) {
-      setCurrentPage(1); // Set ke 1 jika tidak ada data
+      setCurrentPage(1);
     }
   }, [currentPage, totalPages]);
 
   const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
   const endIndex = startIndex + ITEMS_PER_PAGE;
-
   const paginatedAccounts = sortedAccounts.slice(startIndex, endIndex);
 
   if (isLoading) {
@@ -172,27 +195,82 @@ export default function AccountList({ type }: AccountListProps) {
   return (
     <>
       <Card className="border-gray-200 shadow-sm">
+        {/* HEADER DENGAN FILTER SEJAJAR */}
         <CardHeader className="bg-blue-600 text-white rounded-t-lg">
-          <CardTitle className="flex items-center">
-            <ListFilter className="mr-2 h-5 w-5" />
-            {getTitle(type)} Accounts
+          <CardTitle className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center">
+              <ListFilter className="mr-2 h-5 w-5" />
+              {getTitle(type)} Accounts
+            </div>
+
+            {/* Filter Section di Header */}
+            <div className="flex items-center gap-2">
+              <Select value={platformFilter} onValueChange={setPlatformFilter}>
+                <SelectTrigger className="w-[180px] h-9 bg-white border-transparent text-gray-900 focus:ring-white/20">
+                  <div className="flex items-center gap-2 truncate">
+                    <Filter className="h-3.5 w-3.5 text-gray-500" />
+                    <SelectValue placeholder="Filter Platform" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Platform</SelectItem>
+                  {PLATFORM_LIST.map((p) => (
+                    <SelectItem key={p.key} value={p.key}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Tombol Reset Filter (Putih Transparan) */}
+              {platformFilter !== "all" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setPlatformFilter("all")}
+                  className="h-9 w-9 text-white/70 hover:text-white hover:bg-blue-500"
+                  title="Reset Filter"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              )}
+            </div>
           </CardTitle>
         </CardHeader>
+
         <CardContent className="pt-6">
-          {filteredAccounts.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500 dark:text-gray-400">
-                No {type} accounts found
-              </p>
+          {/* --- TABLE CONTENT --- */}
+          {sortedAccounts.length === 0 ? (
+            <div className="text-center py-10 border rounded-lg bg-gray-50">
+              {accountsByType.length === 0 ? (
+                <p className="text-gray-500 dark:text-gray-400">
+                  No {type} accounts found in database.
+                </p>
+              ) : (
+                <>
+                  <Filter className="mx-auto h-10 w-10 text-gray-300 mb-3" />
+                  <p className="text-gray-900 font-medium">Tidak ditemukan</p>
+                  <p className="text-sm text-gray-500">
+                    Tidak ada akun {type} untuk platform yang dipilih.
+                  </p>
+                  <Button
+                    variant="link"
+                    onClick={() => setPlatformFilter("all")}
+                    className="mt-2 text-blue-600"
+                  >
+                    Reset Filter
+                  </Button>
+                </>
+              )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="bg-gray-50">
                   <TableRow>
                     <TableHead>Email</TableHead>
                     <TableHead>Password</TableHead>
-                    <TableHead>Platform</TableHead> {/* Header added */}
+                    <TableHead>Platform</TableHead>
                     <TableHead className="text-center">
                       Profiles (Avail/Total)
                     </TableHead>
@@ -206,8 +284,8 @@ export default function AccountList({ type }: AccountListProps) {
                     let availableProfiles = 0;
                     let totalProfiles = 0;
                     let profileDisplay = "-/-";
-
                     let profilesArray: Profile[] = [];
+
                     if (typeof account.profiles === "string") {
                       try {
                         profilesArray = JSON.parse(
@@ -215,7 +293,7 @@ export default function AccountList({ type }: AccountListProps) {
                         ) as Profile[];
                       } catch (e) {
                         console.error("Error parsing profiles JSON:", e);
-                        profileDisplay = "Error"; // Tampilkan error jika JSON tidak valid
+                        profileDisplay = "Error";
                       }
                     } else if (Array.isArray(account.profiles)) {
                       profilesArray = account.profiles as unknown as Profile[];
@@ -231,7 +309,7 @@ export default function AccountList({ type }: AccountListProps) {
                       ).length;
                       profileDisplay = `${availableProfiles}/${totalProfiles}`;
                     } else if (profileDisplay !== "Error") {
-                      profileDisplay = "N/A"; // Data tidak dikenal
+                      profileDisplay = "N/A";
                     }
 
                     const daysLeft = getRemainingDays(account);
@@ -374,34 +452,24 @@ export default function AccountList({ type }: AccountListProps) {
               </Table>
             </div>
           )}
-          {/* ▲▲▲ SELESAI KONTEN JIKA ADA DATA ▲▲▲ */}
 
-          {/* ▼▼▼ TAMBAHKAN PAGINATION UI ▼▼▼ */}
-          {/* (Ditempatkan di dalam CardContent, setelah blok ternary) */}
-          {totalPages > 1 && ( // Hanya tampilkan jika lebih dari 1 halaman
+          {/* Pagination */}
+          {totalPages > 1 && (
             <Pagination className="mt-6">
               <PaginationContent>
-                {/* Tombol Previous */}
                 <PaginationItem>
                   <PaginationPrevious
-                    href="#" // href="#" agar tidak pindah halaman
+                    href="#"
                     onClick={(e) => {
                       e.preventDefault();
                       setCurrentPage((prev) => Math.max(1, prev - 1));
                     }}
-                    // Nonaktifkan jika di halaman pertama
                     className={
                       currentPage === 1 ? "pointer-events-none opacity-50" : ""
                     }
                     aria-disabled={currentPage === 1}
                   />
                 </PaginationItem>
-
-                {/* Nomor Halaman (Logika sederhana) */}
-                {/* TODO: Untuk pagination yang lebih kompleks (ellipsis, dll.) 
-                  perlu logika tambahan untuk generate nomor halaman 
-                  (misal: hanya tampilkan 1, ..., 4, 5, 6, ..., 10)
-                */}
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(
                   (page) => (
                     <PaginationItem key={page}>
@@ -411,7 +479,6 @@ export default function AccountList({ type }: AccountListProps) {
                           e.preventDefault();
                           setCurrentPage(page);
                         }}
-                        // Tandai halaman aktif
                         isActive={currentPage === page}
                       >
                         {page}
@@ -419,9 +486,6 @@ export default function AccountList({ type }: AccountListProps) {
                     </PaginationItem>
                   )
                 )}
-                {/* Bisa ditambahkan <PaginationEllipsis /> jika halamannya banyak */}
-
-                {/* Tombol Next */}
                 <PaginationItem>
                   <PaginationNext
                     href="#"
@@ -429,7 +493,6 @@ export default function AccountList({ type }: AccountListProps) {
                       e.preventDefault();
                       setCurrentPage((prev) => Math.min(totalPages, prev + 1));
                     }}
-                    // Nonaktifkan jika di halaman terakhir
                     className={
                       currentPage === totalPages
                         ? "pointer-events-none opacity-50"
@@ -441,11 +504,10 @@ export default function AccountList({ type }: AccountListProps) {
               </PaginationContent>
             </Pagination>
           )}
-          {/* ▲▲▲ SELESAI PAGINATION UI ▲▲▲ */}
         </CardContent>
       </Card>
 
-      {/* Dialog Edit Akun */}
+      {/* Dialogs */}
       {editingAccount && (
         <EditAccountDialog
           account={editingAccount}
@@ -454,7 +516,6 @@ export default function AccountList({ type }: AccountListProps) {
         />
       )}
 
-      {/* Dialog Konfirmasi Delete */}
       <AlertDialog
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
@@ -466,9 +527,8 @@ export default function AccountList({ type }: AccountListProps) {
               This action cannot be undone. This will permanently delete the
               account{" "}
               <strong>
-                {sortedAccounts.find(
-                  (acc: Account) => acc.id === accountIdToDelete
-                )?.email || ""}
+                {sortedAccounts.find((acc) => acc.id === accountIdToDelete)
+                  ?.email || ""}
               </strong>
               .
             </AlertDialogDescription>
