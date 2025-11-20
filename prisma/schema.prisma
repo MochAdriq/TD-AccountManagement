@@ -87,6 +87,7 @@ model ReportedAccount {
   reportReason String   @map("report_reason")
   reportedAt   DateTime @default(now()) @map("reported_at")
   resolved     Boolean  @default(false)
+  resolvedAt   DateTime? @map("resolved_at")
 
   operatorName String?  @map("operator_name")
 
